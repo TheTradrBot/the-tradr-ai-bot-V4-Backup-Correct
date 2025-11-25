@@ -282,29 +282,42 @@ def _pick_direction_from_bias(
     strong = False
     direction = "neutral"
 
-    # Primary: Weekly & Daily alignment
-    if weekly_trend == daily_trend and weekly_trend in ("bullish", "bearish"):
+    # Primary: Weekly leads, Daily can be mixed (pullbacks are acceptable)
+    if weekly_trend in ("bullish", "bearish"):
         direction = weekly_trend
-        strong = True
-        if monthly_trend == weekly_trend:
+        
+        if weekly_trend == daily_trend:
+            # Perfect alignment
+            strong = True
+            if monthly_trend == weekly_trend:
+                note_parts.append(
+                    f"HTF trend alignment: Monthly={monthly_trend}, Weekly={weekly_trend}, Daily={daily_trend}."
+                )
+            else:
+                note_parts.append(
+                    f"HTF reversal bias: Monthly={monthly_trend}, Weekly={weekly_trend}, Daily={daily_trend}."
+                )
+        elif daily_trend == "mixed":
+            # Weekly leads with Daily pullback/consolidation - acceptable
+            strong = True
             note_parts.append(
-                f"HTF trend alignment: Monthly={monthly_trend}, Weekly={weekly_trend}, Daily={daily_trend}."
+                f"HTF bias: Weekly={weekly_trend} leading, Daily={daily_trend} (pullback/consolidation phase acceptable)."
             )
         else:
+            # Counter-trend: Weekly and Daily oppose
+            strong = False
             note_parts.append(
-                f"HTF reversal bias: Monthly={monthly_trend}, Weekly={weekly_trend}, Daily={daily_trend}."
+                f"HTF bias mixed: Weekly={weekly_trend} vs Daily={daily_trend} (counter-trend conflict)."
             )
     else:
-        # mixed / transitional
-        if weekly_trend in ("bullish", "bearish"):
-            direction = weekly_trend
-        elif daily_trend in ("bullish", "bearish"):
+        # Weekly is mixed, fall back to Daily
+        if daily_trend in ("bullish", "bearish"):
             direction = daily_trend
         else:
             direction = "bullish"  # arbitrary fallback
 
         note_parts.append(
-            f"HTF bias mixed: Monthly={monthly_trend}, Weekly={weekly_trend}, Daily={daily_trend} (no clean alignment)."
+            f"HTF bias weak: Monthly={monthly_trend}, Weekly={weekly_trend}, Daily={daily_trend} (no clear HTF trend)."
         )
         strong = False
 
@@ -572,25 +585,42 @@ def _daily_liquidity_context(
     last = daily_candles[-1]
 
     # --- External liquidity sweeps (liquidity flows idea) ---
-    if len(daily_candles) > 1:
-        prev_lows = lows[:-1]
-        prev_highs = highs[:-1]
-        prev_low_ext = min(prev_lows)
-        prev_high_ext = max(prev_highs)
+    # Check last 5 candles for sweeps instead of just the last one
+    sweep_lookback = 5  # How many recent candles to check for sweeps
+    history_window = 100  # How far back to look for the baseline extremes
+    
+    if len(daily_candles) > sweep_lookback:
+        for i in range(1, sweep_lookback + 1):
+            candle_idx = len(daily_candles) - i
+            recent_candle = daily_candles[candle_idx]
+            
+            # Get baseline from candles BEFORE this one, bounded to history_window
+            start_idx = max(0, candle_idx - history_window)
+            prev_candles = daily_candles[start_idx:candle_idx]
+            
+            if len(prev_candles) < 10:  # Need sufficient history
+                continue
+                
+            prev_lows = [c["low"] for c in prev_candles]
+            prev_highs = [c["high"] for c in prev_candles]
+            prev_low_ext = min(prev_lows)
+            prev_high_ext = max(prev_highs)
 
-        swept_down = last["low"] < prev_low_ext and last["close"] > prev_low_ext
-        swept_up = last["high"] > prev_high_ext and last["close"] < prev_high_ext
+            swept_down = recent_candle["low"] < prev_low_ext and recent_candle["close"] > prev_low_ext
+            swept_up = recent_candle["high"] > prev_high_ext and recent_candle["close"] < prev_high_ext
 
-        if swept_down:
-            notes.append(
-                f"Daily: recent sweep of external liquidity below {prev_low_ext:.5f} with close back above the level."
-            )
-            ok = True
-        elif swept_up:
-            notes.append(
-                f"Daily: recent sweep of external liquidity above {prev_high_ext:.5f} with close back below the level."
-            )
-            ok = True
+            if swept_down:
+                notes.append(
+                    f"Daily: recent sweep of external liquidity below {prev_low_ext:.5f} with close back above ({i} candles ago)."
+                )
+                ok = True
+                break
+            elif swept_up:
+                notes.append(
+                    f"Daily: recent sweep of external liquidity above {prev_high_ext:.5f} with close back below ({i} candles ago)."
+                )
+                ok = True
+                break
 
     # --- External liquidity magnets (next targets) ---
     dist_high = _percent_distance(price, high_ext)
@@ -607,7 +637,7 @@ def _daily_liquidity_context(
         f"Daily: main external liquidity pool {side} current price around {pool:.5f}."
     )
 
-    near_external = min(dist_high, dist_low) <= 1.0
+    near_external = min(dist_high, dist_low) <= 2.5
 
     if near_external:
         ok = True
@@ -637,14 +667,14 @@ def _daily_liquidity_context(
         notes.append(
             f"Daily: internal equal highs cluster around {eq_high:.5f} (liquidity)."
         )
-        if _percent_distance(price, eq_high) <= 1.0:
+        if _percent_distance(price, eq_high) <= 2.5:
             ok = True
 
     if eq_low is not None:
         notes.append(
             f"Daily: internal equal lows cluster around {eq_low:.5f} (liquidity)."
         )
-        if _percent_distance(price, eq_low) <= 1.0:
+        if _percent_distance(price, eq_low) <= 2.5:
             ok = True
 
     note = " ".join(notes)
@@ -1226,9 +1256,9 @@ def scan_single_asset(symbol: str) -> Optional[ScanResult]:
 
     min_trade_conf = 5 if SIGNAL_MODE == "standard" else 4
 
-    if flags["confirmation"] and confluence_score >= min_trade_conf + 1 and flags["rr"]:
+    if flags["confirmation"] and confluence_score >= min_trade_conf and flags["rr"]:
         status = "active"
-    elif confluence_score >= min_trade_conf and flags["location"] and flags["fib"] and flags["liquidity"]:
+    elif confluence_score >= min_trade_conf - 1 and flags["location"] and flags["fib"] and flags["liquidity"]:
         status = "in_progress"
     else:
         status = "scan_only"
