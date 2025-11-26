@@ -2,6 +2,7 @@ import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
+from datetime import datetime
 
 import os
 
@@ -92,13 +93,21 @@ def _ensure_trade_progress(trade_key: str) -> None:
         }
 
 
-def _compute_trade_progress(idea: ScanResult) -> tuple[float, float]:
-    """Compute (current_price, approx_RR) for a trade idea."""
-    candles = get_ohlcv(idea.symbol, timeframe="D", count=1)
-    if not candles:
+def _compute_trade_progress(idea: ScanResult, live_prices: dict = None) -> tuple[float, float]:
+    """Compute (current_price, approx_RR) for a trade idea using live prices."""
+    current_price = None
+    
+    if live_prices and idea.symbol in live_prices:
+        price_data = live_prices[idea.symbol]
+        current_price = price_data.get("mid", 0) if price_data else 0
+    
+    if not current_price or current_price <= 0:
+        prices = get_current_prices([idea.symbol])
+        if prices and idea.symbol in prices:
+            current_price = prices[idea.symbol].get("mid", 0)
+    
+    if not current_price or current_price <= 0:
         return float("nan"), float("nan")
-
-    current_price = candles[-1]["close"]
 
     if idea.entry is None or idea.stop_loss is None:
         return current_price, float("nan")
@@ -121,24 +130,29 @@ def _compute_trade_progress(idea: ScanResult) -> tuple[float, float]:
 
 
 async def check_trade_updates(updates_channel: discord.abc.Messageable) -> None:
-    """Check active trades for TP/SL hits and send updates."""
+    """Check active trades for TP/SL hits and send updates using live prices."""
     if not ACTIVE_TRADES:
         return
 
     trade_keys = list(ACTIVE_TRADES.keys())
+    
+    all_symbols = list(set(ACTIVE_TRADES[k].symbol for k in trade_keys if k in ACTIVE_TRADES))
+    live_prices = await asyncio.to_thread(get_current_prices, all_symbols) if all_symbols else {}
 
     for key in trade_keys:
         trade = ACTIVE_TRADES.get(key)
         if trade is None:
             continue
 
-        candles = get_ohlcv(trade.symbol, timeframe="H4", count=1)
-        if not candles:
-            candles = get_ohlcv(trade.symbol, timeframe="D", count=1)
-        if not candles:
+        live_price_data = live_prices.get(trade.symbol)
+        if live_price_data:
+            price = live_price_data.get("mid", 0)
+            if price <= 0:
+                print(f"[check_trade_updates] {trade.symbol}: Invalid live price, skipping update")
+                continue
+        else:
+            print(f"[check_trade_updates] {trade.symbol}: Could not fetch live price, skipping update")
             continue
-
-        price = candles[-1]["close"]
         _ensure_trade_progress(key)
         progress = TRADE_PROGRESS[key]
 
@@ -540,6 +554,7 @@ async def cleartrades(interaction: discord.Interaction):
     ACTIVE_TRADES.clear()
     TRADE_PROGRESS.clear()
     TRADE_SIZING.clear()
+    TRADE_ENTRY_DATES.clear()
     await interaction.response.send_message(f"Cleared {count} active trades.", ephemeral=True)
 
 
@@ -566,43 +581,73 @@ async def autoscan_loop():
             await scan_channel.send(chunk)
 
     if trades_channel is not None:
+        active_trade_symbols = []
+        pending_trades = []
+        
         for group_name, (scan_results, trade_ideas) in markets.items():
             for trade in trade_ideas:
                 if trade.status != "active":
                     continue
-
                 trade_key = f"{trade.symbol}_{trade.direction}"
                 if trade_key in ACTIVE_TRADES:
                     continue
+                active_trade_symbols.append(trade.symbol)
+                pending_trades.append(trade)
+        
+        live_prices = {}
+        if active_trade_symbols:
+            print(f"[autoscan] Fetching live prices for {len(active_trade_symbols)} symbols...")
+            live_prices = await asyncio.to_thread(get_current_prices, list(set(active_trade_symbols)))
+            print(f"[autoscan] Got live prices for {len(live_prices)} symbols")
+        
+        for trade in pending_trades:
+            trade_key = f"{trade.symbol}_{trade.direction}"
+            
+            live_price_data = live_prices.get(trade.symbol)
+            if not live_price_data:
+                print(f"[autoscan] {trade.symbol}: SKIPPED - Could not fetch live price (check OANDA API credentials)")
+                continue
+            
+            live_mid = live_price_data.get("mid", 0)
+            if live_mid <= 0:
+                print(f"[autoscan] {trade.symbol}: SKIPPED - Live price invalid ({live_mid})")
+                continue
+            
+            trade.entry = live_mid
+            print(f"[autoscan] {trade.symbol}: Using live price {live_mid:.5f} as entry")
+            
+            entry_time = datetime.utcnow()
+            TRADE_ENTRY_DATES[trade_key] = entry_time
+            
+            ACTIVE_TRADES[trade_key] = trade
+            _ensure_trade_progress(trade_key)
 
-                ACTIVE_TRADES[trade_key] = trade
-                _ensure_trade_progress(trade_key)
-
-                confluence_items = build_confluence_list(trade)
-                
-                sizing = calculate_position_size_5ers(
-                    symbol=trade.symbol,
-                    entry_price=trade.entry,
-                    stop_price=trade.stop_loss,
-                )
-                
-                TRADE_SIZING[trade_key] = sizing
-                
-                embed = create_setup_embed(
-                    symbol=trade.symbol,
-                    direction=trade.direction,
-                    timeframe="H4",
-                    entry=trade.entry,
-                    stop_loss=trade.stop_loss,
-                    tp1=trade.tp1,
-                    tp2=trade.tp2,
-                    tp3=trade.tp3,
-                    confluence_score=trade.confluence_score,
-                    confluence_items=confluence_items,
-                    description=f"High-confluence setup with {trade.confluence_score}/7 factors aligned.",
-                )
-                
-                await trades_channel.send(embed=embed)
+            confluence_items = build_confluence_list(trade)
+            
+            sizing = calculate_position_size_5ers(
+                symbol=trade.symbol,
+                entry_price=trade.entry,
+                stop_price=trade.stop_loss,
+            )
+            
+            TRADE_SIZING[trade_key] = sizing
+            
+            embed = create_setup_embed(
+                symbol=trade.symbol,
+                direction=trade.direction,
+                timeframe="H4",
+                entry=trade.entry,
+                stop_loss=trade.stop_loss,
+                tp1=trade.tp1,
+                tp2=trade.tp2,
+                tp3=trade.tp3,
+                confluence_score=trade.confluence_score,
+                confluence_items=confluence_items,
+                description=f"High-confluence setup with {trade.confluence_score}/7 factors aligned.",
+                entry_datetime=entry_time,
+            )
+            
+            await trades_channel.send(embed=embed)
 
     updates_channel = bot.get_channel(TRADE_UPDATES_CHANNEL_ID)
     if updates_channel is not None and ACTIVE_TRADES:
