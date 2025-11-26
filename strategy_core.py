@@ -13,23 +13,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Tuple, Any
 
-from strategy import (
-    ScanResult,
-    _infer_trend,
-    _pick_direction_from_bias,
-    _location_context,
-    _fib_context,
-    _daily_liquidity_context,
-    _structure_context,
-    _h4_confirmation,
-    _rr_context,
-    _find_last_swing_leg_for_fib,
-    _find_pivots,
-    _find_swings,
-    _atr,
-    _find_structure_sl,
-)
-
 
 @dataclass
 class StrategyParams:
