@@ -10,9 +10,10 @@ You keep:
 import os
 
 # How strict the confluence engine is.
-# "standard"  = stricter, fewer trades (current behaviour).
-# "aggressive" = more trades, looser filters.
-SIGNAL_MODE = "standard"  # later you can change this to "aggressive"
+# "standard"  = balanced trades and quality (recommended for live trading)
+# "aggressive" = more trades, looser filters (for experimentation/backtesting)
+# Set SIGNAL_MODE environment variable to override, e.g., SIGNAL_MODE=aggressive
+SIGNAL_MODE = os.getenv("SIGNAL_MODE", "standard")
 
 
 # ==== Discord ====

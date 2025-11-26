@@ -336,7 +336,7 @@ def run_backtest(asset: str, period: str) -> Dict:
     open_trade: Optional[Dict] = None
     
     min_trade_conf = 3 if SIGNAL_MODE == "standard" else 2
-    cooldown_bars = 3
+    cooldown_bars = 1
     last_trade_idx = -cooldown_bars
 
     for idx in indices:
@@ -400,8 +400,8 @@ def run_backtest(asset: str, period: str) -> Dict:
 
         if has_confirmation and has_rr and confluence_score >= min_trade_conf:
             status = "active"
-        elif confluence_score >= min_trade_conf and (has_location or has_fib):
-            status = "in_progress"
+        elif confluence_score >= min_trade_conf and (has_location or has_fib or has_liquidity or has_structure):
+            status = "watching"
         else:
             status = "scan_only"
 

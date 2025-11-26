@@ -696,14 +696,13 @@ def _rr_context(
                 risk = entry - sl
                 
                 if risk > 0:
-                    tp1 = entry + risk * 1.5
-                    tp2 = entry + risk * 2.5
-                    tp3 = entry + risk * 4.0
-                    tp4 = entry + risk * 5.5
-                    tp5 = entry + risk * 7.0
+                    tp1 = entry + risk * 1.2
+                    tp2 = entry + risk * 2.0
+                    tp3 = entry + risk * 3.0
+                    tp4 = entry + risk * 4.5
+                    tp5 = entry + risk * 6.0
                     
-                    rr1 = 1.5
-                    note = f"R/R: Entry near {entry:.5f}, SL at {sl:.5f}, TP1 at 1.5R"
+                    note = f"R/R: Entry near {entry:.5f}, SL at {sl:.5f}, TP1 at 1.2R"
                     return note, True, entry, sl, tp1, tp2, tp3, tp4, tp5
 
             else:
@@ -714,35 +713,34 @@ def _rr_context(
                 risk = sl - entry
                 
                 if risk > 0:
-                    tp1 = entry - risk * 1.5
-                    tp2 = entry - risk * 2.5
-                    tp3 = entry - risk * 4.0
-                    tp4 = entry - risk * 5.5
-                    tp5 = entry - risk * 7.0
+                    tp1 = entry - risk * 1.2
+                    tp2 = entry - risk * 2.0
+                    tp3 = entry - risk * 3.0
+                    tp4 = entry - risk * 4.5
+                    tp5 = entry - risk * 6.0
                     
-                    rr1 = 1.5
-                    note = f"R/R: Entry near {entry:.5f}, SL at {sl:.5f}, TP1 at 1.5R"
+                    note = f"R/R: Entry near {entry:.5f}, SL at {sl:.5f}, TP1 at 1.2R"
                     return note, True, entry, sl, tp1, tp2, tp3, tp4, tp5
 
     entry = current
     if direction == "bullish":
-        sl = entry - atr * 1.2
+        sl = entry - atr * 1.0
         risk = entry - sl
-        tp1 = entry + risk * 1.5
-        tp2 = entry + risk * 2.5
-        tp3 = entry + risk * 4.0
-        tp4 = entry + risk * 5.5
-        tp5 = entry + risk * 7.0
+        tp1 = entry + risk * 1.2
+        tp2 = entry + risk * 2.0
+        tp3 = entry + risk * 3.0
+        tp4 = entry + risk * 4.5
+        tp5 = entry + risk * 6.0
     else:
-        sl = entry + atr * 1.2
+        sl = entry + atr * 1.0
         risk = sl - entry
-        tp1 = entry - risk * 1.5
-        tp2 = entry - risk * 2.5
-        tp3 = entry - risk * 4.0
-        tp4 = entry - risk * 5.5
-        tp5 = entry - risk * 7.0
+        tp1 = entry - risk * 1.2
+        tp2 = entry - risk * 2.0
+        tp3 = entry - risk * 3.0
+        tp4 = entry - risk * 4.5
+        tp5 = entry - risk * 6.0
 
-    note = f"R/R: ATR-based levels, TP1 at 1.5R"
+    note = f"R/R: ATR-based levels, TP1 at 1.2R"
     return note, True, entry, sl, tp1, tp2, tp3, tp4, tp5
 
 
