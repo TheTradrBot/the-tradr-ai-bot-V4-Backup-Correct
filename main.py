@@ -15,6 +15,7 @@ from config import (
     INDICES,
     ENERGIES,
     CRYPTO_ASSETS,
+    BONDS,
     SIGNAL_MODE,
 )
 
@@ -451,6 +452,7 @@ async def live(interaction: discord.Interaction):
             "Indices": INDICES,
             "Energies": ENERGIES,
             "Crypto": CRYPTO_ASSETS,
+            "Bonds": BONDS,
         }
 
         lines: list[str] = []
@@ -469,9 +471,7 @@ async def live(interaction: discord.Interaction):
             for sym in symbols:
                 if sym in prices:
                     mid = prices[sym]["mid"]
-                    bid = prices[sym]["bid"]
-                    ask = prices[sym]["ask"]
-                    lines.append(f"{sym}: `{mid:.2f}` (bid: {bid:.2f}, ask: {ask:.2f})")
+                    lines.append(f"{sym}: `{mid:.2f}`")
                 else:
                     lines.append(f"{sym}: N/A")
             lines.append("")
