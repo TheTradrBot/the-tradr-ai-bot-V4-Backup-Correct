@@ -39,6 +39,13 @@ Trade signals include:
 
 ## Recent Changes
 
+**November 26, 2025 - Live Price Fix for Trade Activation**
+- Fixed critical bug: Trade entries now use **live OANDA prices** instead of historical candle close prices
+- Trade activation is now **gated on live price availability** - no fallback to stale data
+- TP/SL monitoring in check_trade_updates now uses live prices instead of H4/D candle closes
+- Entry datetime is now properly recorded in TRADE_ENTRY_DATES for accurate timestamps
+- This prevents issues like BTC showing entry at 94250 when actual price was 90000
+
 **November 26, 2025 - 5%ers Risk Model & Discord Embeds**
 - Added 5%ers 100K High Stakes account risk configuration
 - Implemented position sizing with lot size calculations
