@@ -441,6 +441,14 @@ async def trade(interaction: discord.Interaction):
     await interaction.response.send_message(msg[:2000])
 
 
+def _format_price(price: float) -> str:
+    """Format price with appropriate decimals: 4 for small prices, 2 for larger."""
+    if price < 10:
+        return f"{price:.4f}"
+    else:
+        return f"{price:.2f}"
+
+
 @bot.tree.command(name="live", description="Show latest prices for all assets.")
 async def live(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -469,7 +477,7 @@ async def live(interaction: discord.Interaction):
             for sym in symbols:
                 if sym in prices:
                     mid = prices[sym]["mid"]
-                    lines.append(f"{sym}: `{mid:.2f}`")
+                    lines.append(f"{sym}: `{_format_price(mid)}`")
                 else:
                     lines.append(f"{sym}: N/A")
             lines.append("")
