@@ -125,10 +125,10 @@ def _signal_to_scan_result(signal: Signal) -> ScanResult:
 def scan_single_asset(symbol: str) -> Optional[ScanResult]:
     """Full Blueprint scan using unified strategy_core engine."""
     try:
-        monthly = get_ohlcv(symbol, timeframe="M", count=240) or []
-        weekly = get_ohlcv(symbol, timeframe="W", count=520) or []
-        daily = get_ohlcv(symbol, timeframe="D", count=2000) or []
-        h4 = get_ohlcv(symbol, timeframe="H4", count=2000) or []
+        monthly = get_ohlcv(symbol, timeframe="M", count=24) or []
+        weekly = get_ohlcv(symbol, timeframe="W", count=104) or []
+        daily = get_ohlcv(symbol, timeframe="D", count=500) or []
+        h4 = get_ohlcv(symbol, timeframe="H4", count=500) or []
         
         if not daily or not weekly:
             return None
@@ -148,15 +148,18 @@ def scan_single_asset(symbol: str) -> Optional[ScanResult]:
         
         most_recent = signals[-1]
         return _signal_to_scan_result(most_recent)
-    except Exception:
+    except Exception as e:
+        print(f"[strategy] Error scanning {symbol}: {e}")
         return None
 
 
 def scan_group(symbols: List[str]) -> Tuple[List[ScanResult], List[ScanResult]]:
     results: List[ScanResult] = []
     trade_ideas: List[ScanResult] = []
+    total = len(symbols)
 
-    for sym in symbols:
+    for i, sym in enumerate(symbols, 1):
+        print(f"  [{i}/{total}] Scanning {sym}...")
         res = scan_single_asset(sym)
         if not res:
             continue
@@ -190,19 +193,29 @@ def scan_energies() -> Tuple[List[ScanResult], List[ScanResult]]:
 def scan_all_markets() -> Dict[str, Tuple[List[ScanResult], List[ScanResult]]]:
     markets: Dict[str, Tuple[List[ScanResult], List[ScanResult]]] = {}
 
+    print("[scan] Scanning Forex...")
     fx_results, fx_trades = scan_forex()
     markets["Forex"] = (fx_results, fx_trades)
+    print(f"[scan] Forex done: {len(fx_results)} results")
 
+    print("[scan] Scanning Metals...")
     metals_results, metals_trades = scan_metals()
     markets["Metals"] = (metals_results, metals_trades)
+    print(f"[scan] Metals done: {len(metals_results)} results")
 
+    print("[scan] Scanning Indices...")
     indices_results, indices_trades = scan_indices()
     markets["Indices"] = (indices_results, indices_trades)
+    print(f"[scan] Indices done: {len(indices_results)} results")
 
+    print("[scan] Scanning Energies...")
     energies_results, energies_trades = scan_energies()
     markets["Energies"] = (energies_results, energies_trades)
+    print(f"[scan] Energies done: {len(energies_results)} results")
 
+    print("[scan] Scanning Crypto...")
     crypto_results, crypto_trades = scan_crypto()
     markets["Crypto"] = (crypto_results, crypto_trades)
+    print(f"[scan] Crypto done: {len(crypto_results)} results")
 
     return markets

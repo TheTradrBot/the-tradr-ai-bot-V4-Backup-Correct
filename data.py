@@ -6,19 +6,27 @@ to reduce latency and API calls.
 """
 
 import datetime as dt
+import os
 from typing import List, Dict, Any, Optional
 
 import requests
 
-from config import OANDA_API_KEY, OANDA_API_URL, GRANULARITY_MAP
+from config import OANDA_API_URL, GRANULARITY_MAP
 from cache import get_cache
+
+
+def _get_api_key() -> str:
+    """Get OANDA API key from environment."""
+    return os.getenv("OANDA_API_KEY", "").strip()
 
 
 def _oanda_headers() -> Optional[Dict[str, str]]:
     """Get OANDA API headers, or None if API key not configured."""
-    if not OANDA_API_KEY:
+    api_key = _get_api_key()
+    if not api_key:
+        print("[data] OANDA_API_KEY not configured")
         return None
-    return {"Authorization": f"Bearer {OANDA_API_KEY}"}
+    return {"Authorization": f"Bearer {api_key}"}
 
 
 def get_ohlcv(

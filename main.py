@@ -3,9 +3,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+import os
+
 from config import (
     DISCORD_TOKEN,
-    OANDA_API_KEY,
     SCAN_CHANNEL_ID,
     TRADES_CHANNEL_ID,
     TRADE_UPDATES_CHANNEL_ID,
@@ -266,7 +267,7 @@ bot = BlueprintTraderBot()
 async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
     print("Blueprint Trader AI is online.")
-    if OANDA_API_KEY:
+    if os.getenv("OANDA_API_KEY"):
         if not autoscan_loop.is_running():
             autoscan_loop.start()
             print("Autoscan loop started.")

@@ -130,7 +130,6 @@ CRYPTO_ASSETS = [
     "ETH_USD",   # Ethereum
     "LTC_USD",   # Litecoin
     "BCH_USD",   # Bitcoin Cash
-    "LINK_USD",  # Chainlink
 ]
 
 # Convenience groups
