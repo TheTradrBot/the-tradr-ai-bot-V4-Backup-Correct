@@ -368,12 +368,10 @@ def run_backtest(asset: str, period: str) -> Dict:
 
     trades: List[Dict] = []
     open_trade: Optional[Dict] = None
-    pending_trade: Optional[Dict] = None
     
     min_trade_conf = 2 if SIGNAL_MODE == "standard" else 1
     cooldown_bars = 0
     last_trade_idx = -1
-    max_wait_bars = 5
 
     for idx in indices:
         c = daily[idx]
@@ -395,48 +393,6 @@ def run_backtest(asset: str, period: str) -> Dict:
                 continue
 
         if open_trade is not None:
-            continue
-        
-        if pending_trade is not None:
-            prev_close = daily[idx-1]["close"] if idx > 0 else None
-            e = pending_trade["entry"]
-            direction = pending_trade["direction"]
-            
-            if direction == "bullish":
-                is_limit = prev_close is not None and e <= prev_close
-                filled = (low <= e) if is_limit else (high >= e)
-            else:
-                is_limit = prev_close is not None and e >= prev_close
-                filled = (high >= e) if is_limit else (low <= e)
-            
-            if filled:
-                open_trade = {
-                    "asset": pending_trade["asset"],
-                    "direction": direction,
-                    "entry": e,
-                    "sl": pending_trade["sl"],
-                    "tp1": pending_trade["tp1"],
-                    "tp2": pending_trade["tp2"],
-                    "tp3": pending_trade["tp3"],
-                    "tp4": pending_trade.get("tp4"),
-                    "tp5": pending_trade.get("tp5"),
-                    "risk": pending_trade["risk"],
-                    "entry_date": d_i,
-                    "entry_index": idx,
-                    "confluence": pending_trade["confluence"],
-                }
-                
-                closed = _maybe_exit_trade(open_trade, high, low, d_i)
-                if closed is not None:
-                    trades.append(closed)
-                    open_trade = None
-                    last_trade_idx = idx
-                pending_trade = None
-                continue
-            
-            pending_trade["waited"] += 1
-            if pending_trade["waited"] > max_wait_bars:
-                pending_trade = None
             continue
 
         if idx - last_trade_idx < cooldown_bars:
@@ -498,7 +454,7 @@ def run_backtest(asset: str, period: str) -> Dict:
         if risk <= 0:
             continue
 
-        pending_trade = {
+        open_trade = {
             "asset": asset,
             "direction": direction,
             "entry": entry,
@@ -509,10 +465,9 @@ def run_backtest(asset: str, period: str) -> Dict:
             "tp4": tp4,
             "tp5": tp5,
             "risk": risk,
-            "signal_date": d_i,
-            "signal_index": idx,
+            "entry_date": d_i,
+            "entry_index": idx,
             "confluence": confluence_score,
-            "waited": 0,
         }
 
     from config import ACCOUNT_SIZE, RISK_PER_TRADE_PCT
