@@ -4,6 +4,7 @@ from discord.ext import commands, tasks
 
 from config import (
     DISCORD_TOKEN,
+    OANDA_API_KEY,
     SCAN_CHANNEL_ID,
     TRADES_CHANNEL_ID,
     TRADE_UPDATES_CHANNEL_ID,
@@ -207,8 +208,12 @@ bot = BlueprintTraderBot()
 async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
     print("Blueprint Trader AI is online.")
-    if not autoscan_loop.is_running():
-        autoscan_loop.start()
+    if OANDA_API_KEY:
+        if not autoscan_loop.is_running():
+            autoscan_loop.start()
+            print("Autoscan loop started.")
+    else:
+        print("OANDA_API_KEY not configured. Autoscan disabled. Set it in Replit Secrets to enable market scanning.")
 
 
 @bot.tree.command(name="help", description="Show all available commands.")

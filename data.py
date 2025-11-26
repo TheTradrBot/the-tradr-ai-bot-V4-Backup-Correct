@@ -14,9 +14,10 @@ from config import OANDA_API_KEY, OANDA_API_URL, GRANULARITY_MAP
 from cache import get_cache
 
 
-def _oanda_headers() -> Dict[str, str]:
+def _oanda_headers() -> Optional[Dict[str, str]]:
+    """Get OANDA API headers, or None if API key not configured."""
     if not OANDA_API_KEY:
-        raise ValueError("OANDA_API_KEY not set in environment (Replit secrets).")
+        return None
     return {"Authorization": f"Bearer {OANDA_API_KEY}"}
 
 
@@ -45,6 +46,11 @@ def get_ohlcv(
         if cached is not None:
             return cached
 
+    headers = _oanda_headers()
+    if headers is None:
+        print(f"[data.get_ohlcv] OANDA_API_KEY not configured. Set it in Replit Secrets.")
+        return []
+
     granularity = GRANULARITY_MAP.get(timeframe, timeframe)
     url = f"{OANDA_API_URL}/v3/instruments/{instrument}/candles"
 
@@ -54,8 +60,6 @@ def get_ohlcv(
         "price": "M",
     }
 
-    headers = _oanda_headers()
-    
     try:
         resp = requests.get(url, headers=headers, params=params, timeout=15)
     except requests.exceptions.RequestException as e:
