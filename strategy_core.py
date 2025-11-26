@@ -248,15 +248,23 @@ def _infer_trend(candles: List[Dict], ema_short: int = 8, ema_long: int = 21) ->
     if not candles or len(candles) < ema_long + 5:
         return "mixed"
     
-    closes = [c["close"] for c in candles]
+    closes = [c["close"] for c in candles if c.get("close") is not None]
+    
+    if len(closes) < ema_long + 5:
+        return "mixed"
     
     def calc_ema(values: List[float], period: int) -> float:
         if len(values) < period:
-            return sum(values) / len(values) if values else 0
+            valid_values = [v for v in values if v is not None and v == v]
+            return sum(valid_values) / len(valid_values) if valid_values else 0
         k = 2 / (period + 1)
-        ema = sum(values[:period]) / period
+        initial_values = [v for v in values[:period] if v is not None and v == v]
+        if not initial_values:
+            return 0
+        ema = sum(initial_values) / len(initial_values)
         for price in values[period:]:
-            ema = price * k + ema * (1 - k)
+            if price is not None and price == price:
+                ema = price * k + ema * (1 - k)
         return ema
     
     ema_s = calc_ema(closes, ema_short)
