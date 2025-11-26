@@ -313,6 +313,7 @@ async def help_command(interaction: discord.Interaction):
 **Trading:**
 `/trade` - Show active trades with status
 `/live` - Latest prices for all assets
+`/cleartrades` - Clear all active trade tracking
 
 **Analysis:**
 `/backtest [asset] [period]` - Test strategy performance
@@ -321,6 +322,7 @@ async def help_command(interaction: discord.Interaction):
 **System:**
 `/cache` - View cache statistics
 `/clearcache` - Clear data cache
+`/debug` - Bot health and status check
 """
     await interaction.response.send_message(commands_text, ephemeral=True)
 
@@ -330,112 +332,136 @@ async def help_command(interaction: discord.Interaction):
 async def scan(interaction: discord.Interaction, asset: str):
     await interaction.response.defer()
     
-    result = scan_single_asset(asset.upper().replace("/", "_"))
+    try:
+        result = scan_single_asset(asset.upper().replace("/", "_"))
 
-    if not result:
-        await interaction.followup.send(f"No data available for **{asset}**. Check the instrument name.")
-        return
+        if not result:
+            await interaction.followup.send(f"No data available for **{asset}**. Check the instrument name.")
+            return
 
-    if result.confluence_score < 3:
-        status_msg = (
-            f"**{result.symbol}** | {result.direction.upper()}\n"
-            f"Confluence: {result.confluence_score}/7\n\n"
-            f"_Low confluence - no actionable setup at this time._"
-        )
-        await interaction.followup.send(status_msg)
-        return
+        if result.confluence_score < 3:
+            status_msg = (
+                f"**{result.symbol}** | {result.direction.upper()}\n"
+                f"Confluence: {result.confluence_score}/7\n\n"
+                f"_Low confluence - no actionable setup at this time._"
+            )
+            await interaction.followup.send(status_msg)
+            return
 
-    msg = format_detailed_scan(result)
-    chunks = split_message(msg, limit=1900)
+        msg = format_detailed_scan(result)
+        chunks = split_message(msg, limit=1900)
 
-    for i, chunk in enumerate(chunks):
-        if i == 0:
-            await interaction.followup.send(chunk)
-        else:
-            await interaction.followup.send(chunk)
+        for i, chunk in enumerate(chunks):
+            if i == 0:
+                await interaction.followup.send(chunk)
+            else:
+                await interaction.followup.send(chunk)
+    except Exception as e:
+        print(f"[/scan] Error scanning {asset}: {e}")
+        await interaction.followup.send(f"Error scanning **{asset}**: {str(e)}")
 
 
 @bot.tree.command(name="forex", description="Scan all forex pairs.")
 async def forex(interaction: discord.Interaction):
     await interaction.response.defer()
-    scan_results, _ = await asyncio.to_thread(scan_forex)
+    try:
+        scan_results, _ = await asyncio.to_thread(scan_forex)
 
-    if not scan_results:
-        await interaction.followup.send("**Forex** - No setups found.")
-        return
+        if not scan_results:
+            await interaction.followup.send("**Forex** - No setups found.")
+            return
 
-    msg = format_scan_group("Forex", scan_results)
-    chunks = split_message(msg, limit=1900)
+        msg = format_scan_group("Forex", scan_results)
+        chunks = split_message(msg, limit=1900)
 
-    for chunk in chunks:
-        await interaction.followup.send(chunk)
+        for chunk in chunks:
+            await interaction.followup.send(chunk)
+    except Exception as e:
+        print(f"[/forex] Error: {e}")
+        await interaction.followup.send(f"Error scanning forex: {str(e)}")
 
 
 @bot.tree.command(name="crypto", description="Scan crypto assets.")
 async def crypto(interaction: discord.Interaction):
     await interaction.response.defer()
-    scan_results, _ = await asyncio.to_thread(scan_crypto)
+    try:
+        scan_results, _ = await asyncio.to_thread(scan_crypto)
 
-    if not scan_results:
-        await interaction.followup.send("**Crypto** - No setups found.")
-        return
+        if not scan_results:
+            await interaction.followup.send("**Crypto** - No setups found.")
+            return
 
-    msg = format_scan_group("Crypto", scan_results)
-    chunks = split_message(msg, limit=1900)
+        msg = format_scan_group("Crypto", scan_results)
+        chunks = split_message(msg, limit=1900)
 
-    for chunk in chunks:
-        await interaction.followup.send(chunk)
+        for chunk in chunks:
+            await interaction.followup.send(chunk)
+    except Exception as e:
+        print(f"[/crypto] Error: {e}")
+        await interaction.followup.send(f"Error scanning crypto: {str(e)}")
 
 
 @bot.tree.command(name="com", description="Scan commodities (metals + energies).")
 async def com(interaction: discord.Interaction):
     await interaction.response.defer()
-    scan_results_m, _ = await asyncio.to_thread(scan_metals)
-    scan_results_e, _ = await asyncio.to_thread(scan_energies)
-    combined = scan_results_m + scan_results_e
+    try:
+        scan_results_m, _ = await asyncio.to_thread(scan_metals)
+        scan_results_e, _ = await asyncio.to_thread(scan_energies)
+        combined = scan_results_m + scan_results_e
 
-    if not combined:
-        await interaction.followup.send("**Commodities** - No setups found.")
-        return
+        if not combined:
+            await interaction.followup.send("**Commodities** - No setups found.")
+            return
 
-    msg = format_scan_group("Commodities", combined)
-    chunks = split_message(msg, limit=1900)
+        msg = format_scan_group("Commodities", combined)
+        chunks = split_message(msg, limit=1900)
 
-    for chunk in chunks:
-        await interaction.followup.send(chunk)
+        for chunk in chunks:
+            await interaction.followup.send(chunk)
+    except Exception as e:
+        print(f"[/com] Error: {e}")
+        await interaction.followup.send(f"Error scanning commodities: {str(e)}")
 
 
 @bot.tree.command(name="indices", description="Scan stock indices.")
 async def indices(interaction: discord.Interaction):
     await interaction.response.defer()
-    scan_results, _ = await asyncio.to_thread(scan_indices)
+    try:
+        scan_results, _ = await asyncio.to_thread(scan_indices)
 
-    if not scan_results:
-        await interaction.followup.send("**Indices** - No setups found.")
-        return
+        if not scan_results:
+            await interaction.followup.send("**Indices** - No setups found.")
+            return
 
-    msg = format_scan_group("Indices", scan_results)
-    chunks = split_message(msg, limit=1900)
+        msg = format_scan_group("Indices", scan_results)
+        chunks = split_message(msg, limit=1900)
 
-    for chunk in chunks:
-        await interaction.followup.send(chunk)
+        for chunk in chunks:
+            await interaction.followup.send(chunk)
+    except Exception as e:
+        print(f"[/indices] Error: {e}")
+        await interaction.followup.send(f"Error scanning indices: {str(e)}")
 
 
 @bot.tree.command(name="market", description="Full market scan across all asset classes.")
 async def market(interaction: discord.Interaction):
     await interaction.response.defer()
-    markets = await asyncio.to_thread(scan_all_markets)
+    try:
+        markets = await asyncio.to_thread(scan_all_markets)
 
-    messages = format_autoscan_output(markets)
-    
-    if not messages:
-        await interaction.followup.send("**Market Scan** - No setups found.")
-        return
+        messages = format_autoscan_output(markets)
+        
+        if not messages:
+            await interaction.followup.send("**Market Scan** - No setups found.")
+            return
 
-    for msg in messages:
-        chunks = split_message(msg, limit=1900)
-        for chunk in chunks:
-            await interaction.followup.send(chunk)
+        for msg in messages:
+            chunks = split_message(msg, limit=1900)
+            for chunk in chunks:
+                await interaction.followup.send(chunk)
+    except Exception as e:
+        print(f"[/market] Error: {e}")
+        await interaction.followup.send(f"Error scanning markets: {str(e)}")
 
 
 @bot.tree.command(name="trade", description="Show active trades with status.")
@@ -523,10 +549,15 @@ async def live(interaction: discord.Interaction):
 async def backtest_cmd(interaction: discord.Interaction, asset: str, period: str):
     await interaction.response.defer()
     
-    result = run_backtest(asset.upper().replace("/", "_"), period)
-
-    msg = format_backtest_result(result)
-    await interaction.followup.send(msg)
+    try:
+        result = run_backtest(asset.upper().replace("/", "_"), period)
+        msg = format_backtest_result(result)
+        chunks = split_message(msg, limit=1900)
+        for chunk in chunks:
+            await interaction.followup.send(chunk)
+    except Exception as e:
+        print(f"[/backtest] Error backtesting {asset}: {e}")
+        await interaction.followup.send(f"Error running backtest for **{asset}**: {str(e)}")
 
 
 @bot.tree.command(name="cache", description="View cache statistics.")
@@ -556,6 +587,53 @@ async def cleartrades(interaction: discord.Interaction):
     TRADE_SIZING.clear()
     TRADE_ENTRY_DATES.clear()
     await interaction.response.send_message(f"Cleared {count} active trades.", ephemeral=True)
+
+
+@bot.tree.command(name="debug", description="Show bot health and status summary.")
+async def debug_cmd(interaction: discord.Interaction):
+    """Health and status check for the bot."""
+    try:
+        import platform
+        from data import OANDA_API_KEY, OANDA_ACCOUNT_ID
+        
+        oanda_status = "Connected" if OANDA_API_KEY and OANDA_ACCOUNT_ID else "Not configured"
+        
+        cache_stats = get_cache_stats()
+        
+        autoscan_status = "Running" if autoscan_loop.is_running() else "Stopped"
+        
+        uptime_str = "N/A"
+        if bot.user:
+            uptime_str = f"Online as {bot.user.name}"
+        
+        scan_ch = bot.get_channel(SCAN_CHANNEL_ID)
+        trades_ch = bot.get_channel(TRADES_CHANNEL_ID)
+        updates_ch = bot.get_channel(TRADE_UPDATES_CHANNEL_ID)
+        
+        channels_status = []
+        channels_status.append(f"Scan: {'OK' if scan_ch else 'NOT FOUND'}")
+        channels_status.append(f"Trades: {'OK' if trades_ch else 'NOT FOUND'}")
+        channels_status.append(f"Updates: {'OK' if updates_ch else 'NOT FOUND'}")
+        
+        msg = (
+            "**Blueprint Trader AI - Debug Info**\n\n"
+            f"**Status:** {uptime_str}\n"
+            f"**OANDA API:** {oanda_status}\n"
+            f"**Autoscan:** {autoscan_status} (every {SCAN_INTERVAL_HOURS}H)\n"
+            f"**Signal Mode:** {SIGNAL_MODE}\n\n"
+            f"**Channels:**\n"
+            f"  {' | '.join(channels_status)}\n\n"
+            f"**Active Trades:** {len(ACTIVE_TRADES)}\n"
+            f"**Cache:** {cache_stats['cached_items']} items, {cache_stats['hit_rate_pct']}% hit rate\n\n"
+            f"**Account Config:**\n"
+            f"  Size: ${ACCOUNT_SIZE:,}\n"
+            f"  Risk/Trade: {RISK_PER_TRADE_PCT*100:.1f}%\n\n"
+            f"**System:** Python {platform.python_version()}"
+        )
+        
+        await interaction.response.send_message(msg, ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"Error getting debug info: {str(e)}", ephemeral=True)
 
 
 @tasks.loop(hours=SCAN_INTERVAL_HOURS)
