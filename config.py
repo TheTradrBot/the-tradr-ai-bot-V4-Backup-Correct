@@ -77,63 +77,24 @@ GRANULARITY_MAP = {
 # ==== Instruments & groups ====
 # All available OANDA instruments
 
-# OANDA FX pairs - Major, Minor, and Exotic pairs
+# OANDA FX pairs - Majors and Crosses only
 FOREX_PAIRS = [
     # Majors
-    "EUR_USD",
-    "GBP_USD",
-    "USD_JPY",
-    "USD_CHF",
-    "AUD_USD",
-    "USD_CAD",
-    "NZD_USD",
-    # Crosses
-    "EUR_GBP",
-    "EUR_JPY",
-    "EUR_CHF",
-    "EUR_AUD",
-    "EUR_CAD",
-    "EUR_NZD",
-    "GBP_JPY",
-    "GBP_CHF",
-    "GBP_AUD",
-    "GBP_CAD",
+    "EUR_USD", "GBP_USD", "USD_JPY", "USD_CHF",
+    "USD_CAD", "AUD_USD", "NZD_USD",
+
+    # EUR crosses
+    "EUR_GBP", "EUR_JPY", "EUR_CHF", "EUR_AUD",
+    "EUR_CAD", "EUR_NZD",
+
+    # GBP crosses
+    "GBP_JPY", "GBP_CHF", "GBP_AUD", "GBP_CAD",
     "GBP_NZD",
-    "AUD_JPY",
-    "AUD_CHF",
-    "AUD_CAD",
-    "AUD_NZD",
-    "CAD_JPY",
-    "CAD_CHF",
-    "CHF_JPY",
-    "NZD_JPY",
-    "NZD_CHF",
-    "NZD_CAD",
-    # Exotics
-    "USD_SGD",
-    "USD_HKD",
-    "USD_MXN",
-    "USD_ZAR",
-    "USD_TRY",
-    "USD_SEK",
-    "USD_NOK",
-    "USD_DKK",
-    "USD_PLN",
-    "USD_HUF",
-    "USD_CZK",
-    "USD_THB",
-    "EUR_SEK",
-    "EUR_NOK",
-    "EUR_DKK",
-    "EUR_PLN",
-    "EUR_HUF",
-    "EUR_CZK",
-    "EUR_TRY",
-    "EUR_ZAR",
-    "EUR_SGD",
-    "GBP_SGD",
-    "GBP_PLN",
-    "GBP_ZAR",
+
+    # AUD / NZD / CAD / CHF / JPY crosses
+    "AUD_JPY", "AUD_CHF", "AUD_CAD", "AUD_NZD",
+    "NZD_JPY", "NZD_CHF", "NZD_CAD",
+    "CAD_JPY", "CAD_CHF", "CHF_JPY",
 ]
 
 # Metals
@@ -154,17 +115,6 @@ INDICES = [
     "US30_USD",    # Dow Jones
     "SPX500_USD",  # S&P 500
     "NAS100_USD",  # Nasdaq 100
-    "US2000_USD",  # Russell 2000
-    "UK100_GBP",   # FTSE 100
-    "DE30_EUR",    # DAX
-    "FR40_EUR",    # CAC 40
-    "EU50_EUR",    # Euro Stoxx 50
-    "JP225_USD",   # Nikkei 225
-    "AU200_AUD",   # ASX 200
-    "HK33_HKD",    # Hang Seng
-    "CN50_USD",    # China A50
-    "SG30_SGD",    # Singapore 30
-    "TWIX_USD",    # Taiwan Index
 ]
 
 # Energies
@@ -183,15 +133,8 @@ CRYPTO_ASSETS = [
     "LINK_USD",  # Chainlink
 ]
 
-# Bonds
-BONDS = [
-    "USB02Y_USD",  # US 2-Year T-Note
-    "USB05Y_USD",  # US 5-Year T-Note
-    "USB10Y_USD",  # US 10-Year T-Note
-    "USB30Y_USD",  # US 30-Year T-Bond
-    "UK10YB_GBP",  # UK 10-Year Gilt
-    "DE10YB_EUR",  # German 10-Year Bund
-]
+# Bonds (disabled)
+BONDS = []
 
 # Convenience groups
 
