@@ -109,3 +109,53 @@ def clear_cache() -> None:
 def clear_instrument_cache(instrument: str) -> None:
     """Clear cache for a specific instrument."""
     get_cache().clear_instrument(instrument)
+
+
+def get_current_prices(instruments: List[str]) -> Dict[str, Dict[str, float]]:
+    """
+    Get current bid/ask prices from OANDA.
+    
+    Returns dict like: {"EUR_USD": {"bid": 1.0950, "ask": 1.0952, "mid": 1.0951}}
+    """
+    headers = _oanda_headers()
+    if headers is None:
+        return {}
+    
+    if not instruments:
+        return {}
+    
+    # OANDA requires comma-separated instrument list
+    instruments_str = ",".join(instruments)
+    url = f"{OANDA_API_URL}/v3/accounts/{_get_account_id()}/pricing"
+    
+    params = {"instruments": instruments_str}
+    
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=10)
+    except requests.exceptions.RequestException as e:
+        print(f"[data.get_current_prices] Network error: {e}")
+        return {}
+    
+    if resp.status_code != 200:
+        print(f"[data.get_current_prices] Error {resp.status_code}: {resp.text}")
+        return {}
+    
+    result = {}
+    data = resp.json()
+    
+    for price in data.get("prices", []):
+        instrument = price.get("instrument")
+        bid = float(price.get("bids", [{}])[0].get("price", 0)) if price.get("bids") else 0
+        ask = float(price.get("asks", [{}])[0].get("price", 0)) if price.get("asks") else 0
+        mid = (bid + ask) / 2 if bid and ask else 0
+        
+        if instrument and mid:
+            result[instrument] = {"bid": bid, "ask": ask, "mid": mid}
+    
+    return result
+
+
+def _get_account_id() -> str:
+    """Get OANDA account ID from config."""
+    from config import OANDA_ACCOUNT_ID
+    return OANDA_ACCOUNT_ID or ""
