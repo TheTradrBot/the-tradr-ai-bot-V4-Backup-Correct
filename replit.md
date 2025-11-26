@@ -149,3 +149,81 @@ Key settings in `config.py`:
 - `SCAN_INTERVAL_HOURS` - Autoscan frequency (default: 4)
 - Discord channel IDs for scan, trades, and updates
 - Instrument lists for each market type
+
+## Optimization System
+
+The bot includes a comprehensive strategy optimization framework for backtesting and tuning.
+
+### New Modules
+
+1. **data_loader.py** - CSV data loading for historical backtesting
+   - Load OHLCV data from CSV files
+   - Year-by-year filtering
+   - Timeframe conversion utilities
+
+2. **strategy_core.py** - Parameterized strategy engine
+   - `StrategyParams` dataclass for all tunable parameters
+   - `generate_signals()` - Generate signals from historical data
+   - `simulate_trades()` - Walk-forward trade simulation
+   - Same logic used by both backtests and live scanning
+
+3. **backtest_engine.py** - Enhanced backtest framework
+   - Comprehensive performance metrics
+   - No look-ahead bias (walk-forward)
+   - Year-by-year analysis
+   - Results export to CSV
+
+4. **optimizer.py** - Strategy parameter optimization
+   - Grid/random search over parameter space
+   - Multi-objective scoring
+   - Configuration saving/loading
+
+5. **report.py** - Performance reporting
+   - Asset-by-asset analysis
+   - Baseline vs optimized comparison
+   - Target achievement tracking
+
+6. **settings.py** - Configuration management
+   - Toggle between baseline and optimized modes
+   - Per-asset parameter overrides
+
+### Optimization Targets
+
+Historical optimization aims for:
+- >= 50 trades per year
+- 70-100% win rate
+- >= 50% yearly return
+
+### CLI Commands
+
+```bash
+# Run baseline backtests
+python backtest_engine.py --mode baseline
+
+# Run optimization
+python optimizer.py --max-configs 50
+
+# Generate performance report
+python report.py
+
+# Compare baseline vs optimized
+python report.py --compare
+
+# Quick single-asset backtest
+python backtest_engine.py --asset XAU_USD --year 2024
+```
+
+### Data Setup
+
+Place CSV files in the `/data` folder:
+- Naming: `EURUSD.csv`, `XAUUSD.csv`, etc.
+- Required columns: timestamp, open, high, low, close, volume
+- Timestamp format: ISO 8601 (e.g., 2024-01-15)
+
+### Strategy Toggle
+
+Set environment variable to switch modes:
+- `USE_OPTIMIZED_STRATEGY=true` - Use optimized parameters (default)
+- `USE_OPTIMIZED_STRATEGY=false` - Use baseline parameters
+
+Optimized configuration is stored in `best_strategy_config.json`.
