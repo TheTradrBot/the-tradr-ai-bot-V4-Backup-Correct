@@ -14,12 +14,13 @@ Blueprint Trader AI is an automated trading signal bot that scans multiple marke
 
 The bot is configured for The 5%ers 10K High Stakes account with the following risk settings:
 
-### Account Configuration
-- **Account Size:** $100,000 USD
-- **Risk Per Trade:** 1% ($1,000)
-- **Max Daily Loss:** 5% ($5,000)
-- **Max Total Drawdown:** 10% ($10,000)
-- **Max Open Risk:** 3% ($3,000)
+### Account Configuration (10K High Stakes)
+- **Account Size:** $10,000 USD
+- **Risk Per Trade:** 0.75% ($75)
+- **Max Daily Loss:** 5% ($500)
+- **Max Total Drawdown:** 10% ($1,000)
+- **Step 1 Target:** 8% profit ($800)
+- **Step 2 Target:** 5% profit ($500)
 
 ### Position Sizing
 The bot calculates lot sizes based on:
@@ -27,10 +28,10 @@ The bot calculates lot sizes based on:
 2. Stop loss distance in pips
 3. Pip value per lot for each instrument
 
-Example: For a 40-pip stop on EUR/USD with 1% risk:
-- Risk USD = $100,000 × 1% = $1,000
+Example: For a 40-pip stop on EUR/USD with 0.75% risk:
+- Risk USD = $10,000 × 0.75% = $75
 - Pip value per lot = $10
-- Lot size = $1,000 ÷ (40 × $10) = 2.50 lots
+- Lot size = $75 ÷ (40 × $10) = 0.19 lots
 
 ### Discord Outputs
 Trade signals include:

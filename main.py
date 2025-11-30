@@ -596,16 +596,16 @@ async def cleartrades(interaction: discord.Interaction):
     month_year="Month and year (e.g., 'Jan 24', 'Dec 2024')"
 )
 async def challenge_cmd(interaction: discord.Interaction, month_year: str):
-    """Simulate a 5ers challenge starting from the specified month."""
+    """Simulate a 5ers 10K High Stakes challenge starting from the specified month."""
     await interaction.response.defer()
     
     try:
         from src.backtest.engine import (
-            parse_period_string, 
             simulate_5ers_challenge,
             format_challenge_result,
             BacktestTrade,
         )
+        from backtest import run_backtest
         
         month_year = month_year.strip()
         month_map = {
@@ -623,7 +623,6 @@ async def challenge_cmd(interaction: discord.Interaction, month_year: str):
             month = 1
             year = 2024
         
-        from datetime import datetime, timedelta
         start_date = datetime(year, month, 1)
         if month == 12:
             end_date = datetime(year + 1, 1, 1) - timedelta(days=1)
@@ -632,30 +631,61 @@ async def challenge_cmd(interaction: discord.Interaction, month_year: str):
         
         period = f"{start_date.strftime('%b %Y')} - {end_date.strftime('%b %Y')}"
         
-        from backtest import run_backtest
-        
         assets = ["EUR_USD", "GBP_USD", "XAU_USD", "USD_JPY"]
         all_trades = []
+        asset_results = []
         
         for asset in assets:
             try:
                 result = run_backtest(asset, period)
-                if hasattr(result, 'trades'):
-                    for t in result.trades:
+                if result and isinstance(result, dict) and result.get('trades'):
+                    asset_results.append(f"{asset}: {len(result['trades'])} trades, {result.get('win_rate', 0):.1f}% WR")
+                    for t in result['trades']:
+                        entry_date_raw = t.get('entry_date') or t.get('entry_time')
+                        exit_date_raw = t.get('exit_date') or t.get('exit_time')
+                        
+                        try:
+                            if isinstance(entry_date_raw, str):
+                                entry_dt = datetime.fromisoformat(entry_date_raw.replace('Z', '+00:00'))
+                            elif isinstance(entry_date_raw, datetime):
+                                entry_dt = entry_date_raw
+                            else:
+                                entry_dt = start_date
+                        except:
+                            entry_dt = start_date
+                        
+                        try:
+                            if isinstance(exit_date_raw, str):
+                                exit_dt = datetime.fromisoformat(exit_date_raw.replace('Z', '+00:00'))
+                            elif isinstance(exit_date_raw, datetime):
+                                exit_dt = exit_date_raw
+                            else:
+                                exit_dt = None
+                        except:
+                            exit_dt = None
+                        
+                        entry_price = t.get('entry', 0) or t.get('entry_price', 0)
+                        stop_loss = t.get('sl', 0) or t.get('stop_loss', 0)
+                        risk = abs(entry_price - stop_loss) if entry_price and stop_loss else 0
+                        
                         bt = BacktestTrade(
-                            symbol=t.get('symbol', asset),
+                            symbol=asset,
                             direction=t.get('direction', 'bullish'),
-                            entry_date=datetime.fromisoformat(str(t.get('entry_date', start_date))),
-                            entry_price=t.get('entry_price', 0),
-                            stop_loss=t.get('stop_loss', 0),
+                            entry_date=entry_dt,
+                            entry_price=entry_price,
+                            stop_loss=stop_loss,
                             tp1=t.get('tp1'),
                             tp2=t.get('tp2'),
                             tp3=t.get('tp3'),
-                            exit_date=datetime.fromisoformat(str(t.get('exit_date', end_date))) if t.get('exit_date') else None,
-                            exit_price=t.get('exit_price'),
+                            exit_date=exit_dt,
+                            exit_price=t.get('exit_price') or t.get('exit'),
                             exit_reason=t.get('exit_reason', ''),
-                            risk=t.get('risk', 0),
+                            risk=risk,
                         )
+                        rr = t.get('rr', 0)
+                        if rr != 0:
+                            bt.partial_exits = [{"level": bt.exit_reason, "r_multiple": rr, "portion": 1.0}]
+                        
                         all_trades.append(bt)
             except Exception as e:
                 print(f"[/challenge] Error backtesting {asset}: {e}")
@@ -679,6 +709,9 @@ async def challenge_cmd(interaction: discord.Interaction, month_year: str):
         
         msg = format_challenge_result(challenge_result)
         msg = f"**{start_date.strftime('%B %Y')} Challenge**\n\n{msg}"
+        
+        if asset_results:
+            msg += "\n\n**Assets Analyzed:**\n" + "\n".join(f"- {r}" for r in asset_results)
         
         chunks = split_message(msg, limit=1900)
         for chunk in chunks:
