@@ -318,6 +318,8 @@ async def help_command(interaction: discord.Interaction):
 **Analysis:**
 `/backtest [asset] [period]` - Test strategy performance
   Example: `/backtest EUR_USD "Jan 2024 - Dec 2024"`
+`/challenge [month year]` - Simulate 5ers challenge for a month
+  Example: `/challenge Jan 24`
 
 **System:**
 `/cache` - View cache statistics
@@ -587,6 +589,106 @@ async def cleartrades(interaction: discord.Interaction):
     TRADE_SIZING.clear()
     TRADE_ENTRY_DATES.clear()
     await interaction.response.send_message(f"Cleared {count} active trades.", ephemeral=True)
+
+
+@bot.tree.command(name="challenge", description="Simulate 5ers challenge for a month. Example: /challenge Jan 24")
+@app_commands.describe(
+    month_year="Month and year (e.g., 'Jan 24', 'Dec 2024')"
+)
+async def challenge_cmd(interaction: discord.Interaction, month_year: str):
+    """Simulate a 5ers challenge starting from the specified month."""
+    await interaction.response.defer()
+    
+    try:
+        from src.backtest.engine import (
+            parse_period_string, 
+            simulate_5ers_challenge,
+            format_challenge_result,
+            BacktestTrade,
+        )
+        
+        month_year = month_year.strip()
+        month_map = {
+            "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+            "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12
+        }
+        
+        parts = month_year.lower().split()
+        if len(parts) >= 2:
+            month = month_map.get(parts[0][:3], 1)
+            year = int(parts[1])
+            if year < 100:
+                year += 2000
+        else:
+            month = 1
+            year = 2024
+        
+        from datetime import datetime, timedelta
+        start_date = datetime(year, month, 1)
+        if month == 12:
+            end_date = datetime(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            end_date = datetime(year, month + 1, 1) - timedelta(days=1)
+        
+        period = f"{start_date.strftime('%b %Y')} - {end_date.strftime('%b %Y')}"
+        
+        from backtest import run_backtest
+        
+        assets = ["EUR_USD", "GBP_USD", "XAU_USD", "USD_JPY"]
+        all_trades = []
+        
+        for asset in assets:
+            try:
+                result = run_backtest(asset, period)
+                if hasattr(result, 'trades'):
+                    for t in result.trades:
+                        bt = BacktestTrade(
+                            symbol=t.get('symbol', asset),
+                            direction=t.get('direction', 'bullish'),
+                            entry_date=datetime.fromisoformat(str(t.get('entry_date', start_date))),
+                            entry_price=t.get('entry_price', 0),
+                            stop_loss=t.get('stop_loss', 0),
+                            tp1=t.get('tp1'),
+                            tp2=t.get('tp2'),
+                            tp3=t.get('tp3'),
+                            exit_date=datetime.fromisoformat(str(t.get('exit_date', end_date))) if t.get('exit_date') else None,
+                            exit_price=t.get('exit_price'),
+                            exit_reason=t.get('exit_reason', ''),
+                            risk=t.get('risk', 0),
+                        )
+                        all_trades.append(bt)
+            except Exception as e:
+                print(f"[/challenge] Error backtesting {asset}: {e}")
+                continue
+        
+        if not all_trades:
+            await interaction.followup.send(
+                f"**5ers Challenge - {start_date.strftime('%B %Y')}**\n\n"
+                f"No historical trade data available for this period.\n"
+                f"Please ensure OANDA API is configured for live scanning."
+            )
+            return
+        
+        challenge_result = simulate_5ers_challenge(
+            trades=all_trades,
+            start_date=start_date,
+            step=1,
+            starting_balance=10000.0,
+            risk_per_trade_pct=0.75,
+        )
+        
+        msg = format_challenge_result(challenge_result)
+        msg = f"**{start_date.strftime('%B %Y')} Challenge**\n\n{msg}"
+        
+        chunks = split_message(msg, limit=1900)
+        for chunk in chunks:
+            await interaction.followup.send(chunk)
+            
+    except Exception as e:
+        print(f"[/challenge] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        await interaction.followup.send(f"Error simulating challenge: {str(e)}")
 
 
 @bot.tree.command(name="debug", description="Show bot health and status summary.")

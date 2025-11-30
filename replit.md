@@ -1,12 +1,18 @@
-# Blueprint Trader AI
+# Blueprint Trader AI v2.0
 
 ## Overview
 
-Blueprint Trader AI is an automated trading signal bot that scans multiple markets (forex, metals, indices, energies, crypto) using a multi-timeframe confluence strategy. The bot identifies high-probability trading opportunities by analyzing 7 technical pillars across monthly, weekly, daily, and 4-hour timeframes. It integrates with Discord for signal delivery and uses OANDA's practice API for market data.
+Blueprint Trader AI is an automated trading signal bot that scans multiple markets (forex, metals, indices, energies, crypto) using the HTF Confluence Strategy v4. The bot identifies high-probability trading opportunities by analyzing 10 confluence pillars across monthly, weekly, daily, and 4-hour timeframes. It integrates with Discord for signal delivery and uses OANDA's practice API for market data.
 
-## 5%ers 100K High Stakes Risk Model
+**New in v2.0:**
+- Confluence scoring system (0-10 points)
+- 5ers challenge simulation command (`/challenge`)
+- Historical data infrastructure for backtesting from 2003
+- Improved backtest accuracy with proper trade accounting
 
-The bot is configured for The 5%ers 100K High Stakes account with the following risk settings:
+## 5%ers 10K High Stakes Risk Model
+
+The bot is configured for The 5%ers 10K High Stakes account with the following risk settings:
 
 ### Account Configuration
 - **Account Size:** $100,000 USD
