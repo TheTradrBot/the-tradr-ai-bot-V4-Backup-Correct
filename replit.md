@@ -46,6 +46,21 @@ Trade signals include:
 
 ## Recent Changes
 
+**December 2, 2025 - 5ers High Stakes 10K Challenge Simulation (MAJOR UPDATE)**
+- Created centralized `challenge_rules.py` with all 5%ers rule parameters:
+  - Account: $10,000, Risk: 0.75% ($75/trade), Step 1: 8%, Step 2: 5%
+  - Max daily loss: 5%, Max drawdown: 10%, Min profitable days: 3
+  - Profitable day threshold: 0.5% of initial balance ($50+)
+- Rewrote `src/backtest/engine.py` with comprehensive multi-step challenge simulation:
+  - `simulate_single_step()` - Simulates one step with daily PnL tracking
+  - `run_fivers_challenge()` - Full 2-step challenge over date range
+  - Proper daily drawdown resets, profitable day counting, rule breach detection
+- Updated `/challenge` command: Now accepts date ranges (start_month start_year end_month end_year)
+  - Simulates consecutive 2-step challenges over the period
+  - Shows Step 1 vs Step 2 pass rates and difficulty analysis
+- Updated `/backtest` command: Now shows 10K account context and challenge pass/fail
+- Updated `challenge_analysis.py` to use centralized rules from challenge_rules.py
+
 **November 26, 2025 - Live Price Fix for Trade Activation**
 - Fixed critical bug: Trade entries now use **live OANDA prices** instead of historical candle close prices
 - Trade activation is now **gated on live price availability** - no fallback to stale data
