@@ -69,10 +69,98 @@ from src.backtest.engine import (
 )
 
 
+import json
+from pathlib import Path
+
 ACTIVE_TRADES: dict[str, ScanResult] = {}
 TRADE_PROGRESS: dict[str, dict[str, bool]] = {}
 TRADE_SIZING: dict[str, dict] = {}
 TRADE_ENTRY_DATES: dict[str, object] = {}  # Track entry datetime for each trade
+
+# Persistence file for trade state
+TRADE_STATE_FILE = Path("trade_state.json")
+
+def _save_trade_state():
+    """Save active trades and entry dates to disk."""
+    state = {
+        "trades": {},
+        "progress": TRADE_PROGRESS,
+        "sizing": TRADE_SIZING,
+        "entry_dates": {k: v.isoformat() if isinstance(v, datetime) else str(v) for k, v in TRADE_ENTRY_DATES.items()},
+    }
+    
+    for key, trade in ACTIVE_TRADES.items():
+        state["trades"][key] = {
+            "symbol": trade.symbol,
+            "direction": trade.direction,
+            "entry": trade.entry,
+            "stop_loss": trade.stop_loss,
+            "tp1": trade.tp1,
+            "tp2": trade.tp2,
+            "tp3": trade.tp3,
+            "confluence_score": trade.confluence_score,
+        }
+    
+    try:
+        with open(TRADE_STATE_FILE, 'w') as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        print(f"[save_trade_state] Error: {e}")
+
+def _load_trade_state():
+    """Load active trades from disk on bot startup."""
+    global TRADE_ENTRY_DATES
+    
+    if not TRADE_STATE_FILE.exists():
+        return
+    
+    try:
+        with open(TRADE_STATE_FILE, 'r') as f:
+            state = json.load(f)
+        
+        # Restore entry dates
+        for key, date_str in state.get("entry_dates", {}).items():
+            try:
+                TRADE_ENTRY_DATES[key] = datetime.fromisoformat(date_str)
+            except:
+                pass
+        
+        # Restore progress
+        TRADE_PROGRESS.update(state.get("progress", {}))
+        
+        # Restore sizing
+        TRADE_SIZING.update(state.get("sizing", {}))
+        
+        # Restore trades (recreate ScanResult objects)
+        from strategy import ScanResult
+        for key, trade_data in state.get("trades", {}).items():
+            try:
+                trade = ScanResult(
+                    symbol=trade_data["symbol"],
+                    direction=trade_data["direction"],
+                    confluence_score=trade_data["confluence_score"],
+                    htf_bias="",
+                    location_note="",
+                    fib_note="",
+                    liquidity_note="",
+                    structure_note="",
+                    confirmation_note="",
+                    rr_note="",
+                    summary_reason="",
+                    status="active",
+                    entry=trade_data.get("entry"),
+                    stop_loss=trade_data.get("stop_loss"),
+                    tp1=trade_data.get("tp1"),
+                    tp2=trade_data.get("tp2"),
+                    tp3=trade_data.get("tp3"),
+                )
+                ACTIVE_TRADES[key] = trade
+            except Exception as e:
+                print(f"[load_trade_state] Error restoring trade {key}: {e}")
+        
+        print(f"[load_trade_state] Restored {len(ACTIVE_TRADES)} active trades")
+    except Exception as e:
+        print(f"[load_trade_state] Error loading state: {e}")
 
 
 def split_message(text: str, limit: int = 1900) -> list[str]:
@@ -222,13 +310,14 @@ async def check_trade_updates(updates_channel: discord.abc.Messageable) -> None:
                 if hit:
                     progress[flag] = True
                     
+                    # Calculate R-multiple correctly for each direction
                     if direction == "bullish":
                         rr = (level - entry) / risk if risk > 0 else 0
                     else:
                         rr = (entry - level) / risk if risk > 0 else 0
                     
-                    # Ensure rr is positive for TP hits
-                    rr = abs(rr)
+                    # Ensure rr is always positive for TP hits
+                    rr = abs(rr) if rr != 0 else (tp_num * 1.5)  # Use TP level as fallback
                     realized_usd = risk_usd * rr
                     realized_pct = RISK_PER_TRADE_PCT * rr * 100
                     
@@ -284,6 +373,7 @@ async def check_trade_updates(updates_channel: discord.abc.Messageable) -> None:
             TRADE_PROGRESS.pop(key, None)
             TRADE_SIZING.pop(key, None)
             TRADE_ENTRY_DATES.pop(key, None)
+            _save_trade_state()  # Persist trade closure
 
         for embed in embeds_to_send:
             await updates_channel.send(embed=embed)
@@ -309,6 +399,9 @@ async def on_ready():
     print(f"✓ Logged in as {bot.user} (ID: {bot.user.id})")
     print(f"✓ Connected to {len(bot.guilds)} server(s)")
     print("=" * 60)
+    
+    # Load persisted trade state
+    _load_trade_state()
     
     # Check Discord channels
     scan_ch = bot.get_channel(SCAN_CHANNEL_ID)
@@ -867,6 +960,7 @@ async def cleartrades(interaction: discord.Interaction):
     TRADE_PROGRESS.clear()
     TRADE_SIZING.clear()
     TRADE_ENTRY_DATES.clear()
+    _save_trade_state()  # Clear persisted state
     await interaction.response.send_message(f"Cleared {count} active trades.", ephemeral=True)
 
 
@@ -1104,6 +1198,12 @@ async def autoscan_loop():
             print(f"[autoscan] Got live prices for {len(live_prices)} symbols")
         
         for trade in pending_trades:
+            # Only activate trades that match backtest quality standards
+            if trade.confluence_score < 4:
+                continue
+            if not trade.entry or not trade.stop_loss or not trade.tp1:
+                continue
+            
             trade_key = f"{trade.symbol}_{trade.direction}"
             
             live_price_data = live_prices.get(trade.symbol)
@@ -1116,14 +1216,23 @@ async def autoscan_loop():
                 print(f"[autoscan] {trade.symbol}: SKIPPED - Live price invalid ({live_mid})")
                 continue
             
+            # Use the strategy-calculated entry, not just live price
+            # Only activate if price is within 0.5% of calculated entry
+            if trade.entry:
+                price_diff_pct = abs(live_mid - trade.entry) / trade.entry * 100
+                if price_diff_pct > 0.5:
+                    print(f"[autoscan] {trade.symbol}: SKIPPED - Price moved too far from signal ({price_diff_pct:.2f}%)")
+                    continue
+            
             trade.entry = live_mid
-            print(f"[autoscan] {trade.symbol}: Using live price {live_mid:.5f} as entry")
+            print(f"[autoscan] {trade.symbol}: Activating trade at live price {live_mid:.5f}")
             
             entry_time = datetime.utcnow()
             TRADE_ENTRY_DATES[trade_key] = entry_time
             
             ACTIVE_TRADES[trade_key] = trade
             _ensure_trade_progress(trade_key)
+            _save_trade_state()  # Persist trade activation
 
             confluence_items = build_confluence_list(trade)
             
