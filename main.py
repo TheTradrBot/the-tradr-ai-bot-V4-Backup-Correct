@@ -783,18 +783,28 @@ async def output_cmd(interaction: discord.Interaction, asset: str, period: str):
             rr = trade.get('rr', 0)
             result_text = "WIN" if rr > 0 else "LOSS" if rr < 0 else "BE"
             
+            # Get entry and exit prices from the backtest result
+            entry_price = result.get('trades', [{}])[i-1].get('entry', trade.get('entry', 0)) if i <= len(result.get('trades', [])) else trade.get('entry', 0)
+            exit_price = result.get('trades', [{}])[i-1].get('exit_price', trade.get('exit_price', 0)) if i <= len(result.get('trades', [])) else trade.get('exit_price', 0)
+            sl_price = result.get('trades', [{}])[i-1].get('sl', trade.get('sl', 0)) if i <= len(result.get('trades', [])) else trade.get('sl', 0)
+            
+            # Get TP levels - these should be in the result
+            tp1_price = result.get('trades', [{}])[i-1].get('tp1', trade.get('tp1')) if i <= len(result.get('trades', [])) else trade.get('tp1')
+            tp2_price = result.get('trades', [{}])[i-1].get('tp2', trade.get('tp2')) if i <= len(result.get('trades', [])) else trade.get('tp2')
+            tp3_price = result.get('trades', [{}])[i-1].get('tp3', trade.get('tp3')) if i <= len(result.get('trades', [])) else trade.get('tp3')
+            
             writer.writerow({
                 'Trade #': i,
                 'Symbol': trade.get('symbol', asset_upper),
                 'Direction': trade.get('direction', '').upper(),
                 'Entry Date': entry_date,
-                'Entry Price': f"{trade.get('entry', 0):.5f}",
-                'Stop Loss': f"{trade.get('sl', 0):.5f}",
-                'TP1': f"{trade.get('tp1', 0):.5f}" if trade.get('tp1') else 'N/A',
-                'TP2': f"{trade.get('tp2', 0):.5f}" if trade.get('tp2') else 'N/A',
-                'TP3': f"{trade.get('tp3', 0):.5f}" if trade.get('tp3') else 'N/A',
+                'Entry Price': f"{entry_price:.5f}" if entry_price else 'N/A',
+                'Stop Loss': f"{sl_price:.5f}" if sl_price else 'N/A',
+                'TP1': f"{tp1_price:.5f}" if tp1_price else 'N/A',
+                'TP2': f"{tp2_price:.5f}" if tp2_price else 'N/A',
+                'TP3': f"{tp3_price:.5f}" if tp3_price else 'N/A',
                 'Exit Date': exit_date,
-                'Exit Price': f"{trade.get('exit_price', 0):.5f}",
+                'Exit Price': f"{exit_price:.5f}" if exit_price else 'N/A',
                 'Exit Reason': trade.get('exit_reason', 'Unknown'),
                 'R Multiple': f"{rr:+.2f}R",
                 'Result': result_text

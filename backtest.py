@@ -387,6 +387,15 @@ def run_backtest(asset: str, period: str) -> Dict:
         if open_trade is not None and idx > open_trade["entry_index"]:
             closed = _maybe_exit_trade(open_trade, high, low, d_i)
             if closed is not None:
+                # Add entry and TP levels to closed trade
+                closed['symbol'] = open_trade.get('symbol', asset)
+                closed['entry'] = open_trade.get('entry')
+                closed['entry_price'] = open_trade.get('entry')
+                closed['sl'] = open_trade.get('sl')
+                closed['stop_loss'] = open_trade.get('sl')
+                closed['tp1'] = open_trade.get('tp1')
+                closed['tp2'] = open_trade.get('tp2')
+                closed['tp3'] = open_trade.get('tp3')
                 trades.append(closed)
                 open_trade = None
                 last_trade_idx = idx
@@ -456,9 +465,12 @@ def run_backtest(asset: str, period: str) -> Dict:
 
         open_trade = {
             "asset": asset,
+            "symbol": asset,
             "direction": direction,
             "entry": entry,
+            "entry_price": entry,
             "sl": sl,
+            "stop_loss": sl,
             "tp1": tp1,
             "tp2": tp2,
             "tp3": tp3,
