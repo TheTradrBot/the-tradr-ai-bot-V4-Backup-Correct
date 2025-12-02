@@ -227,6 +227,8 @@ async def check_trade_updates(updates_channel: discord.abc.Messageable) -> None:
                     else:
                         rr = (entry - level) / risk if risk > 0 else 0
                     
+                    # Ensure rr is positive for TP hits
+                    rr = abs(rr)
                     realized_usd = risk_usd * rr
                     realized_pct = RISK_PER_TRADE_PCT * rr * 100
                     
@@ -559,15 +561,75 @@ async def live(interaction: discord.Interaction):
         await interaction.followup.send(f"Error fetching live prices: {str(e)}")
 
 
-@bot.tree.command(name="backtest", description='Backtest strategy across all assets. Example: /backtest "Jan 2024 - Dec 2024"')
+@bot.tree.command(name="backtest", description='Backtest strategy. Example: /backtest EUR_USD "Jan 2024 - Dec 2024" or /backtest "Jan 2024 - Dec 2024"')
 @app_commands.describe(
+    asset="Optional: Specific asset to backtest (e.g., EUR_USD). Leave empty for all assets.",
     period="The time period (e.g., 'Jan 2024 - Dec 2024')"
 )
-async def backtest_cmd(interaction: discord.Interaction, period: str):
-    """Run backtest using 10K 5ers High Stakes account rules across all available assets."""
+async def backtest_cmd(interaction: discord.Interaction, period: str, asset: str = None):
+    """Run backtest using 10K 5ers High Stakes account rules."""
     await interaction.response.defer()
     
     try:
+        # Single asset backtest
+        if asset:
+            asset_upper = asset.upper().replace("/", "_")
+            result = run_backtest(asset_upper, period)
+            
+            total_trades = result.get('total_trades', 0)
+            if total_trades == 0:
+                await interaction.followup.send(
+                    f"**No trades found** for {asset_upper} in period: {period}\n\n"
+                    f"This could mean:\n"
+                    f"- No data available for this period\n"
+                    f"- Strategy did not generate signals\n"
+                    f"- Period format incorrect (try 'Jan 2024 - Dec 2024')"
+                )
+                return
+            
+            win_rate = result.get('win_rate', 0)
+            net_return_pct = result.get('net_return_pct', 0)
+            max_dd_pct = result.get('max_drawdown_pct', 0)
+            trades = result.get('trades', [])
+            
+            total_r = sum(t.get('rr', 0) for t in trades) if trades else 0
+            avg_r = total_r / total_trades if total_trades > 0 else 0
+            
+            would_pass_step1 = net_return_pct >= STEP1_PROFIT_TARGET_PCT
+            would_pass_step2 = net_return_pct >= STEP2_PROFIT_TARGET_PCT
+            
+            step1_status = "PASS" if would_pass_step1 else "FAIL"
+            step2_status = "PASS" if would_pass_step2 else "FAIL"
+            
+            profit_usd = FIVERS_10K_RULES.account_size * (net_return_pct / 100)
+            final_balance = FIVERS_10K_RULES.account_size + profit_usd
+            
+            msg = (
+                f"**Backtest Results** - 5ers High Stakes 10K\n\n"
+                f"**{asset_upper}** | {period}\n\n"
+                f"**Account:** ${FIVERS_10K_RULES.account_size:,.0f}\n"
+                f"**Risk/Trade:** {FIVERS_10K_RULES.risk_per_trade_pct}%\n\n"
+                f"**Total Trades:** {total_trades}\n"
+                f"**Win Rate:** {win_rate:.1f}%\n"
+                f"**Total R:** {total_r:+.2f}R\n"
+                f"**Avg R/Trade:** {avg_r:+.2f}R\n\n"
+                f"**Net Return:** {net_return_pct:+.1f}% (${profit_usd:+,.2f})\n"
+                f"**Final Balance:** ${final_balance:,.2f}\n"
+                f"**Max Drawdown:** {max_dd_pct:.2f}%\n\n"
+                f"**Challenge Status:**\n"
+                f"  Step 1 ({STEP1_PROFIT_TARGET_PCT}% target): {step1_status}\n"
+                f"  Step 2 ({STEP2_PROFIT_TARGET_PCT}% target): {step2_status}\n"
+            )
+            
+            if max_dd_pct >= FIVERS_10K_RULES.max_total_drawdown_pct:
+                msg += f"\n**WARNING:** Max drawdown {max_dd_pct:.1f}% would breach 10% limit!"
+            
+            chunks = split_message(msg, limit=1900)
+            for chunk in chunks:
+                await interaction.followup.send(chunk)
+            return
+        
+        # Multi-asset backtest
         all_assets = FOREX_PAIRS + METALS + INDICES + ENERGIES + CRYPTO_ASSETS
         
         all_results = []
@@ -575,9 +637,9 @@ async def backtest_cmd(interaction: discord.Interaction, period: str):
         total_wins_all = 0
         total_r_all = 0.0
         
-        for asset in all_assets[:10]:  # Limit to first 10 to avoid timeout
+        for asset_sym in all_assets[:10]:  # Limit to first 10 to avoid timeout
             try:
-                result = run_backtest(asset, period)
+                result = run_backtest(asset_sym, period)
                 
                 total_trades = result.get('total_trades', 0)
                 if total_trades > 0:
@@ -587,7 +649,7 @@ async def backtest_cmd(interaction: discord.Interaction, period: str):
                     total_r = sum(t.get('rr', 0) for t in trades) if trades else 0
                     
                     all_results.append({
-                        'asset': asset,
+                        'asset': asset_sym,
                         'trades': total_trades,
                         'win_rate': win_rate,
                         'total_r': total_r,
@@ -598,7 +660,7 @@ async def backtest_cmd(interaction: discord.Interaction, period: str):
                     total_wins_all += sum(1 for t in trades if t.get('rr', 0) > 0)
                     total_r_all += total_r
             except Exception as e:
-                print(f"[/backtest] Error with {asset}: {e}")
+                print(f"[/backtest] Error with {asset_sym}: {e}")
                 continue
         
         if not all_results:
@@ -648,6 +710,99 @@ async def backtest_cmd(interaction: discord.Interaction, period: str):
         import traceback
         traceback.print_exc()
         await interaction.followup.send(f"Error running backtest: {str(e)}")
+
+
+@bot.tree.command(name="output", description='Export backtest to CSV. Example: /output EUR_USD "Jan 2024 - Dec 2024"')
+@app_commands.describe(
+    asset="The asset to backtest (e.g., EUR_USD)",
+    period="The time period (e.g., 'Jan 2024 - Dec 2024')"
+)
+async def output_cmd(interaction: discord.Interaction, asset: str, period: str):
+    """Export backtest results to CSV file."""
+    await interaction.response.defer()
+    
+    try:
+        import csv
+        from io import StringIO
+        
+        asset_upper = asset.upper().replace("/", "_")
+        result = run_backtest(asset_upper, period)
+        
+        total_trades = result.get('total_trades', 0)
+        if total_trades == 0:
+            await interaction.followup.send(
+                f"**No trades found** for {asset_upper} in period: {period}"
+            )
+            return
+        
+        trades = result.get('trades', [])
+        
+        # Create CSV in memory
+        output = StringIO()
+        fieldnames = [
+            'Trade #', 'Symbol', 'Direction', 
+            'Entry Date', 'Entry Price', 
+            'Stop Loss', 'TP1', 'TP2', 'TP3',
+            'Exit Date', 'Exit Price', 'Exit Reason',
+            'R Multiple', 'Result'
+        ]
+        
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        for i, trade in enumerate(trades, 1):
+            entry_date = trade.get('entry_date', 'N/A')
+            exit_date = trade.get('exit_date', 'N/A')
+            
+            rr = trade.get('rr', 0)
+            result_text = "WIN" if rr > 0 else "LOSS" if rr < 0 else "BE"
+            
+            writer.writerow({
+                'Trade #': i,
+                'Symbol': trade.get('symbol', asset_upper),
+                'Direction': trade.get('direction', '').upper(),
+                'Entry Date': entry_date,
+                'Entry Price': f"{trade.get('entry', 0):.5f}",
+                'Stop Loss': f"{trade.get('sl', 0):.5f}",
+                'TP1': f"{trade.get('tp1', 0):.5f}" if trade.get('tp1') else 'N/A',
+                'TP2': f"{trade.get('tp2', 0):.5f}" if trade.get('tp2') else 'N/A',
+                'TP3': f"{trade.get('tp3', 0):.5f}" if trade.get('tp3') else 'N/A',
+                'Exit Date': exit_date,
+                'Exit Price': f"{trade.get('exit_price', 0):.5f}",
+                'Exit Reason': trade.get('exit_reason', 'Unknown'),
+                'R Multiple': f"{rr:+.2f}R",
+                'Result': result_text
+            })
+        
+        # Convert to bytes for Discord file upload
+        csv_content = output.getvalue()
+        csv_bytes = csv_content.encode('utf-8')
+        
+        # Create filename
+        period_clean = period.replace(" ", "_").replace("/", "-")
+        filename = f"{asset_upper}_{period_clean}_backtest.csv"
+        
+        # Send as file
+        file = discord.File(
+            fp=StringIO(csv_content),
+            filename=filename
+        )
+        
+        summary_msg = (
+            f"**Backtest CSV Export** - {asset_upper}\n"
+            f"Period: {period}\n"
+            f"Total Trades: {total_trades}\n"
+            f"Win Rate: {result.get('win_rate', 0):.1f}%\n"
+            f"Net Return: {result.get('net_return_pct', 0):+.1f}%"
+        )
+        
+        await interaction.followup.send(content=summary_msg, file=file)
+        
+    except Exception as e:
+        print(f"[/output] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        await interaction.followup.send(f"Error generating CSV: {str(e)}")
 
 
 @bot.tree.command(name="cache", description="View cache statistics.")

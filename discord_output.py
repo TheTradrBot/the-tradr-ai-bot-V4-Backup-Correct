@@ -228,7 +228,10 @@ def create_tp_hit_embed(
     
     embed.add_field(name=f"TP{tp_level}", value=f"{tp_price:.5f}", inline=True)
     
-    profit_text = f"+${realized_usd:,.0f}  (+{realized_pct:.2f}%, +{realized_r:.2f}R)"
+    # Format profit with explicit + sign only if positive
+    profit_text = f"${realized_usd:,.0f}  ({realized_pct:.2f}%, {realized_r:.2f}R)"
+    if realized_usd >= 0:
+        profit_text = f"+{profit_text}"
     embed.add_field(name="Realized", value=profit_text, inline=True)
     
     if remaining_pct < 100:
