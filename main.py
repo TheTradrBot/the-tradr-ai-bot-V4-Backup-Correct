@@ -870,7 +870,7 @@ async def output_cmd(interaction: discord.Interaction, asset: str, period: str):
         # Create CSV in memory
         output = StringIO()
         fieldnames = [
-            'Trade #', 'Symbol', 'Direction', 
+            'Trade #', 'Symbol', 'Direction', 'Confluence',
             'Entry Date', 'Entry Price', 
             'Stop Loss', 'TP1', 'TP2', 'TP3',
             'Exit Date', 'Exit Price', 'Exit Reason',
@@ -897,10 +897,13 @@ async def output_cmd(interaction: discord.Interaction, asset: str, period: str):
             tp2_price = result.get('trades', [{}])[i-1].get('tp2', trade.get('tp2')) if i <= len(result.get('trades', [])) else trade.get('tp2')
             tp3_price = result.get('trades', [{}])[i-1].get('tp3', trade.get('tp3')) if i <= len(result.get('trades', [])) else trade.get('tp3')
             
+            confluence = trade.get('confluence', 0)
+            
             writer.writerow({
                 'Trade #': i,
                 'Symbol': trade.get('symbol', asset_upper),
                 'Direction': trade.get('direction', '').upper(),
+                'Confluence': f"{confluence}/7",
                 'Entry Date': entry_date,
                 'Entry Price': f"{entry_price:.5f}" if entry_price else 'N/A',
                 'Stop Loss': f"{sl_price:.5f}" if sl_price else 'N/A',
@@ -1220,17 +1223,25 @@ async def autoscan_loop():
             print(f"[autoscan] Got live prices for {len(live_prices)} symbols")
         
         for trade in pending_trades:
-            # Only activate trades that match backtest quality standards
+            # Only activate trades that meet strict quality standards
             if trade.confluence_score < 4:
                 continue
             if not trade.entry or not trade.stop_loss or not trade.tp1:
                 continue
             
+            # Must have confirmation flag to be tradeable
+            if trade.status != "active":
+                continue
+            
             trade_key = f"{trade.symbol}_{trade.direction}"
+            
+            # Don't re-trigger existing trades
+            if trade_key in ACTIVE_TRADES:
+                continue
             
             live_price_data = live_prices.get(trade.symbol)
             if not live_price_data:
-                print(f"[autoscan] {trade.symbol}: SKIPPED - Could not fetch live price (check OANDA API credentials)")
+                print(f"[autoscan] {trade.symbol}: SKIPPED - Could not fetch live price")
                 continue
             
             live_mid = live_price_data.get("mid", 0)
@@ -1238,33 +1249,54 @@ async def autoscan_loop():
                 print(f"[autoscan] {trade.symbol}: SKIPPED - Live price invalid ({live_mid})")
                 continue
             
-            # Use the strategy-calculated entry, not just live price
-            # Only activate if price is within 0.5% of calculated entry
+            # Validate price is still in valid entry zone (within 0.5%)
             if trade.entry:
                 price_diff_pct = abs(live_mid - trade.entry) / trade.entry * 100
                 if price_diff_pct > 0.5:
-                    print(f"[autoscan] {trade.symbol}: SKIPPED - Price moved too far from signal ({price_diff_pct:.2f}%)")
+                    print(f"[autoscan] {trade.symbol}: SKIPPED - Price moved {price_diff_pct:.2f}% from signal")
                     continue
             
+            # Validate risk/reward is still valid
+            risk = abs(live_mid - trade.stop_loss)
+            if risk <= 0:
+                print(f"[autoscan] {trade.symbol}: SKIPPED - Invalid risk calculation")
+                continue
+            
+            if trade.direction == "bullish":
+                if live_mid <= trade.stop_loss:
+                    print(f"[autoscan] {trade.symbol}: SKIPPED - Price below SL already")
+                    continue
+                rr_check = (trade.tp1 - live_mid) / risk
+            else:
+                if live_mid >= trade.stop_loss:
+                    print(f"[autoscan] {trade.symbol}: SKIPPED - Price above SL already")
+                    continue
+                rr_check = (live_mid - trade.tp1) / risk
+            
+            if rr_check < 1.5:
+                print(f"[autoscan] {trade.symbol}: SKIPPED - R:R too low ({rr_check:.2f}R)")
+                continue
+            
+            # All checks passed - activate trade
             trade.entry = live_mid
-            print(f"[autoscan] {trade.symbol}: Activating trade at live price {live_mid:.5f}")
-            
             entry_time = datetime.utcnow()
-            TRADE_ENTRY_DATES[trade_key] = entry_time
             
+            print(f"[autoscan] {trade.symbol}: ✓ Activating {trade.direction.upper()} at {live_mid:.5f} ({trade.confluence_score}/7)")
+            
+            TRADE_ENTRY_DATES[trade_key] = entry_time
             ACTIVE_TRADES[trade_key] = trade
             _ensure_trade_progress(trade_key)
-            _save_trade_state()  # Persist trade activation
-
-            confluence_items = build_confluence_list(trade)
             
             sizing = calculate_position_size_5ers(
                 symbol=trade.symbol,
                 entry_price=trade.entry,
                 stop_price=trade.stop_loss,
             )
-            
             TRADE_SIZING[trade_key] = sizing
+            
+            _save_trade_state()  # Persist after all data is set
+            
+            confluence_items = build_confluence_list(trade)
             
             embed = create_setup_embed(
                 symbol=trade.symbol,

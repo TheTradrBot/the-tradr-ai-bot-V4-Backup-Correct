@@ -226,7 +226,7 @@ def create_tp_hit_embed(
 
     if entry_datetime:
         entry_date_str = entry_datetime.strftime("%Y-%m-%d %H:%M UTC")
-        embed.add_field(name="Entry Date", value=entry_date_str, inline=True)
+        embed.add_field(name="Entered", value=entry_date_str, inline=False)
 
     embed.add_field(name=f"TP{tp_level}", value=f"{tp_price:.5f}", inline=True)
 
@@ -286,7 +286,7 @@ def create_sl_hit_embed(
 
     if entry_datetime:
         entry_date_str = entry_datetime.strftime("%Y-%m-%d %H:%M UTC")
-        embed.add_field(name="Entry Date", value=entry_date_str, inline=True)
+        embed.add_field(name="Entered", value=entry_date_str, inline=False)
 
     embed.add_field(name="SL", value=f"{sl_price:.5f}", inline=True)
 
@@ -336,7 +336,7 @@ def create_trade_closed_embed(
 
     if entry_datetime:
         entry_date_str = entry_datetime.strftime("%Y-%m-%d %H:%M UTC")
-        embed.add_field(name="Entry Date", value=entry_date_str, inline=True)
+        embed.add_field(name="Entered", value=entry_date_str, inline=False)
 
     embed.add_field(name="Exit Price", value=f"{avg_exit:.5f}", inline=True)
     embed.add_field(name="Exit Reason", value=exit_reason, inline=True)
