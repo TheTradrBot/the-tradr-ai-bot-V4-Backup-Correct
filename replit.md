@@ -46,6 +46,23 @@ Trade signals include:
 
 ## Recent Changes
 
+**December 2, 2025 - Discord Output Refactor & Anti-Spam (MAJOR UPDATE)**
+- **No Startup Spam**: Bot no longer sends any Discord messages on startup - only console logs
+- **Delayed First Autoscan**: First autoscan is delayed by 4 hours after startup (configurable via FIRST_SCAN_DELAY_HOURS)
+- **Improved Channel Routing**:
+  - Autoscan results -> SCAN channel only
+  - New trade signals -> TRADES channel (with brief note in SCAN channel)
+  - TP/SL updates -> TRADE_UPDATES channel
+- **Enhanced Trade State Tracking** (`trade_state.py`):
+  - Notification tracking (notified_open, notified_tp1, etc.) prevents duplicate Discord messages
+  - Entry datetime stored per trade for accurate timestamps in updates
+  - Persists across restarts via trade_state.json
+- **Channel Configuration** (in `config.py`):
+  - Channel IDs can be set via environment variables (DISCORD_SCAN_CHANNEL_ID, DISCORD_TRADES_CHANNEL_ID, DISCORD_TRADE_UPDATES_CHANNEL_ID)
+  - Graceful fallback to default IDs if not set
+- **Error Handling**: Discord send operations wrapped in try/except to prevent crashes
+- **Clean MT5 Hook Ready**: Structure prepared for future 5%ers High Stakes 10K MT5 integration
+
 **December 2, 2025 - 5ers High Stakes 10K Challenge Simulation (MAJOR UPDATE)**
 - Created centralized `challenge_rules.py` with all 5%ers rule parameters:
   - Account: $10,000, Risk: 0.75% ($75/trade), Step 1: 8%, Step 2: 5%

@@ -12,6 +12,7 @@ from config import (
     TRADES_CHANNEL_ID,
     TRADE_UPDATES_CHANNEL_ID,
     SCAN_INTERVAL_HOURS,
+    FIRST_SCAN_DELAY_HOURS,
     FOREX_PAIRS,
     METALS,
     INDICES,
@@ -376,7 +377,14 @@ async def check_trade_updates(updates_channel: discord.abc.Messageable) -> None:
             _save_trade_state()  # Persist trade closure
 
         for embed in embeds_to_send:
-            await updates_channel.send(embed=embed)
+            try:
+                await updates_channel.send(embed=embed)
+            except discord.Forbidden:
+                print(f"[trade_updates] ERROR: Missing permissions for updates channel")
+            except discord.HTTPException as e:
+                print(f"[trade_updates] ERROR: HTTP error sending update: {e}")
+            except Exception as e:
+                print(f"[trade_updates] ERROR: Failed to send trade update: {e}")
 
 
 class BlueprintTraderBot(commands.Bot):
@@ -395,43 +403,40 @@ bot = BlueprintTraderBot()
 
 @bot.event
 async def on_ready():
-    print("=" * 60)
-    print(f"✓ Logged in as {bot.user} (ID: {bot.user.id})")
-    print(f"✓ Connected to {len(bot.guilds)} server(s)")
-    print("=" * 60)
+    """
+    Bot startup - minimal console output, NO Discord messages.
+    First autoscan is delayed by FIRST_SCAN_DELAY_HOURS to prevent startup spam.
+    """
+    print(f"[startup] Logged in as {bot.user} (ID: {bot.user.id})")
+    print(f"[startup] Connected to {len(bot.guilds)} server(s)")
     
-    # Load persisted trade state
+    # Load persisted trade state (silently - no Discord notifications)
     _load_trade_state()
+    restored_count = len(ACTIVE_TRADES)
+    if restored_count > 0:
+        print(f"[startup] Restored {restored_count} active trades from state file")
     
-    # Check Discord channels
+    # Verify channels exist (console only, no Discord messages)
     scan_ch = bot.get_channel(SCAN_CHANNEL_ID)
     trades_ch = bot.get_channel(TRADES_CHANNEL_ID)
     updates_ch = bot.get_channel(TRADE_UPDATES_CHANNEL_ID)
     
-    print("\n📡 Channel Status:")
-    print(f"  Scan Channel ({SCAN_CHANNEL_ID}): {'✓ Found' if scan_ch else '✗ NOT FOUND'}")
-    print(f"  Trades Channel ({TRADES_CHANNEL_ID}): {'✓ Found' if trades_ch else '✗ NOT FOUND'}")
-    print(f"  Updates Channel ({TRADE_UPDATES_CHANNEL_ID}): {'✓ Found' if updates_ch else '✗ NOT FOUND'}")
+    if not scan_ch:
+        print(f"[startup] WARNING: Scan channel {SCAN_CHANNEL_ID} not found")
+    if not trades_ch:
+        print(f"[startup] WARNING: Trades channel {TRADES_CHANNEL_ID} not found")
+    if not updates_ch:
+        print(f"[startup] WARNING: Updates channel {TRADE_UPDATES_CHANNEL_ID} not found")
     
-    # Check OANDA
-    print("\n🔑 API Status:")
+    # Start autoscan with delay (if OANDA configured)
     if os.getenv("OANDA_API_KEY") and os.getenv("OANDA_ACCOUNT_ID"):
-        print("  OANDA API: ✓ Configured")
         if not autoscan_loop.is_running():
             autoscan_loop.start()
-            print(f"  Autoscan: ✓ Started (every {SCAN_INTERVAL_HOURS}H)")
-        else:
-            print("  Autoscan: ✓ Already running")
+            print(f"[startup] Autoscan scheduled (first in {FIRST_SCAN_DELAY_HOURS}H, then every {SCAN_INTERVAL_HOURS}H)")
     else:
-        print("  OANDA API: ✗ Not configured")
-        print("  Autoscan: ✗ Disabled")
-        print("\n  To enable autoscan, add these to Replit Secrets:")
-        print("    - OANDA_API_KEY")
-        print("    - OANDA_ACCOUNT_ID")
+        print("[startup] OANDA API not configured - autoscan disabled")
     
-    print("\n" + "=" * 60)
-    print("🚀 Blueprint Trader AI is online and ready!")
-    print("=" * 60 + "\n")
+    print("[startup] Blueprint Trader AI is online and ready")
 
 
 @bot.tree.command(name="help", description="Show all available commands.")
@@ -1180,10 +1185,40 @@ async def debug_cmd(interaction: discord.Interaction):
         await interaction.response.send_message(f"Error getting debug info: {str(e)}", ephemeral=True)
 
 
+async def _safe_send(channel, content=None, embed=None):
+    """Safely send a message to a Discord channel with error handling."""
+    if channel is None:
+        return False
+    try:
+        if embed:
+            await channel.send(embed=embed)
+        elif content:
+            await channel.send(content)
+        return True
+    except discord.Forbidden:
+        print(f"[discord] ERROR: Missing permissions to send to channel {channel.id}")
+        return False
+    except discord.HTTPException as e:
+        print(f"[discord] ERROR: HTTP exception sending message: {e}")
+        return False
+    except Exception as e:
+        print(f"[discord] ERROR: Failed to send message: {e}")
+        return False
+
+
 @tasks.loop(hours=SCAN_INTERVAL_HOURS)
 async def autoscan_loop():
+    """
+    Periodic market scan - runs every SCAN_INTERVAL_HOURS.
+    First run is delayed by FIRST_SCAN_DELAY_HOURS.
+    
+    Channel routing:
+    - Autoscan results -> SCAN channel only
+    - New trades -> TRADES channel
+    - TP/SL updates -> TRADE_UPDATES channel
+    """
     await bot.wait_until_ready()
-    print("Running 4H autoscan...")
+    print("[autoscan] Running 4H market scan...")
     
     clear_cache()
 
@@ -1191,16 +1226,22 @@ async def autoscan_loop():
     trades_channel = bot.get_channel(TRADES_CHANNEL_ID)
 
     if scan_channel is None:
-        print("Scan channel not found.")
+        print("[autoscan] WARNING: Scan channel not found, skipping autoscan output")
+    
+    # Run market scan
+    try:
+        markets = await asyncio.to_thread(scan_all_markets)
+    except Exception as e:
+        print(f"[autoscan] ERROR: Market scan failed: {e}")
         return
 
-    markets = await asyncio.to_thread(scan_all_markets)
-
-    messages = format_autoscan_output(markets)
-    for msg in messages:
-        chunks = split_message(msg, limit=1900)
-        for chunk in chunks:
-            await scan_channel.send(chunk)
+    # Send autoscan results to SCAN channel only
+    if scan_channel:
+        messages = format_autoscan_output(markets)
+        for msg in messages:
+            chunks = split_message(msg, limit=1900)
+            for chunk in chunks:
+                await _safe_send(scan_channel, content=chunk)
 
     if trades_channel is not None:
         active_trade_symbols = []
@@ -1313,13 +1354,32 @@ async def autoscan_loop():
                 entry_datetime=entry_time,
             )
             
-            await trades_channel.send(embed=embed)
+            # Send to TRADES channel with error handling
+            await _safe_send(trades_channel, embed=embed)
+            
+            # Send brief notification to SCAN channel
+            if scan_channel:
+                note = f"[{trade.symbol}] {trade.direction.upper()} setup triggered and moved to live trade (see #trades)"
+                await _safe_send(scan_channel, content=note)
 
+    # Check for TP/SL updates and send to TRADE_UPDATES channel
     updates_channel = bot.get_channel(TRADE_UPDATES_CHANNEL_ID)
     if updates_channel is not None and ACTIVE_TRADES:
-        await check_trade_updates(updates_channel)
+        try:
+            await check_trade_updates(updates_channel)
+        except Exception as e:
+            print(f"[autoscan] ERROR: Trade updates check failed: {e}")
 
-    print("Autoscan finished.")
+    print("[autoscan] Scan complete")
+
+
+@autoscan_loop.before_loop
+async def before_autoscan():
+    """Delay the first autoscan run to prevent startup spam."""
+    await bot.wait_until_ready()
+    delay_seconds = FIRST_SCAN_DELAY_HOURS * 3600
+    print(f"[autoscan] Waiting {FIRST_SCAN_DELAY_HOURS}H before first scan...")
+    await asyncio.sleep(delay_seconds)
 
 
 if not DISCORD_TOKEN:

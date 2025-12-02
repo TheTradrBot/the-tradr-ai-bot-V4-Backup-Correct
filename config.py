@@ -60,13 +60,28 @@ SIGNAL_MODE = os.getenv("SIGNAL_MODE", "standard")
 
 DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
-# Replace these with your actual channel IDs (integers)
-SCAN_CHANNEL_ID = 1442194985142190230        # <- scan channel ID
-TRADES_CHANNEL_ID = 1442195008525565962      # <- trades channel ID
-TRADE_UPDATES_CHANNEL_ID = 1438452127767859254  # <- trade updates channel ID
+# Channel IDs - read from environment or use defaults
+# Set these in Replit Secrets or environment variables
+def _get_channel_id(env_name: str, default: int) -> int:
+    """Get channel ID from environment or use default."""
+    val = os.getenv(env_name)
+    if val:
+        try:
+            return int(val)
+        except ValueError:
+            print(f"[config] Warning: Invalid {env_name} value '{val}', using default")
+    return default
+
+# Channel configuration with environment variable overrides
+SCAN_CHANNEL_ID = _get_channel_id("DISCORD_SCAN_CHANNEL_ID", 1442194985142190230)
+TRADES_CHANNEL_ID = _get_channel_id("DISCORD_TRADES_CHANNEL_ID", 1442195008525565962)
+TRADE_UPDATES_CHANNEL_ID = _get_channel_id("DISCORD_TRADE_UPDATES_CHANNEL_ID", 1438452127767859254)
 
 # Autoscan interval (hours)
 SCAN_INTERVAL_HOURS = 4  # every 4H as per your spec
+
+# Delay first autoscan after bot startup (hours)
+FIRST_SCAN_DELAY_HOURS = 4  # prevents startup spam
 
 
 # ==== Data source: OANDA (practice) ====
