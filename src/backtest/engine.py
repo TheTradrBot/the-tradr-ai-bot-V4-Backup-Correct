@@ -5,15 +5,30 @@ Implements realistic walk-forward backtesting with:
 - Accurate trade accounting (partial exits, R multiples)
 - No look-ahead bias
 - Conservative exit logic (SL checked first)
-- 5ers challenge simulation
+- 5ers High Stakes 10K challenge simulation (2-step)
+- Proper profitable day tracking (0.5% threshold)
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import pandas as pd
+
+from challenge_rules import (
+    FIVERS_10K_RULES,
+    ChallengeStep,
+    StepResult,
+    FullChallengeResult,
+    ChallengeSimulationResult,
+    DailyPnL,
+    check_daily_loss_breach,
+    check_max_drawdown_breach,
+    count_profitable_days,
+    analyze_step_difficulty,
+    format_challenge_summary,
+)
 
 
 @dataclass
@@ -88,6 +103,9 @@ class BacktestResult:
     
     trades: List[BacktestTrade] = field(default_factory=list)
     
+    starting_balance: float = 10_000.0
+    risk_per_trade_pct: float = 0.75
+    
     @property
     def total_trades(self) -> int:
         return len(self.trades)
@@ -118,8 +136,17 @@ class BacktestResult:
     
     @property
     def net_return_pct(self) -> float:
-        """Net return assuming 1% risk per trade."""
-        return self.total_r * 1.0
+        """Net return based on actual risk per trade."""
+        return self.total_r * self.risk_per_trade_pct
+    
+    @property
+    def net_return_usd(self) -> float:
+        """Net return in USD."""
+        return self.starting_balance * (self.net_return_pct / 100)
+    
+    @property
+    def final_balance(self) -> float:
+        return self.starting_balance + self.net_return_usd
     
     @property
     def max_drawdown(self) -> float:
@@ -144,6 +171,11 @@ class BacktestResult:
         return max_dd
     
     @property
+    def max_drawdown_pct(self) -> float:
+        """Max drawdown as percentage of account."""
+        return self.max_drawdown * self.risk_per_trade_pct
+    
+    @property
     def exit_breakdown(self) -> Dict[str, int]:
         """Count of trades by exit reason."""
         breakdown = {}
@@ -151,6 +183,14 @@ class BacktestResult:
             reason = t.exit_reason or "Unknown"
             breakdown[reason] = breakdown.get(reason, 0) + 1
         return breakdown
+    
+    def would_pass_step1(self) -> bool:
+        """Check if this backtest would pass Step 1 of 5ers challenge."""
+        return self.net_return_pct >= FIVERS_10K_RULES.step1_profit_target_pct
+    
+    def would_pass_step2(self) -> bool:
+        """Check if this backtest would pass Step 2 of 5ers challenge."""
+        return self.net_return_pct >= FIVERS_10K_RULES.step2_profit_target_pct
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -164,14 +204,16 @@ class BacktestResult:
             "total_r": round(self.total_r, 2),
             "avg_r_per_trade": round(self.avg_r_per_trade, 2),
             "net_return_pct": round(self.net_return_pct, 1),
-            "max_drawdown_r": round(self.max_drawdown, 2),
+            "max_drawdown_pct": round(self.max_drawdown_pct, 2),
             "exit_breakdown": self.exit_breakdown,
+            "would_pass_step1": self.would_pass_step1(),
+            "would_pass_step2": self.would_pass_step2(),
         }
 
 
 @dataclass 
 class FiversChallengeResult:
-    """Results for a 5ers challenge simulation."""
+    """Legacy result class for backward compatibility."""
     start_date: datetime
     end_date: Optional[datetime] = None
     
@@ -432,6 +474,296 @@ def simulate_trade_exit(
     return trade
 
 
+def simulate_single_step(
+    trades: List[BacktestTrade],
+    step: ChallengeStep,
+    start_date: datetime,
+    starting_balance: float = 10_000.0,
+    risk_per_trade_pct: float = 0.75,
+) -> StepResult:
+    """
+    Simulate a single step of the 5ers challenge.
+    
+    Properly tracks:
+    - Daily PnL with correct reset at day boundaries
+    - Profitable days (0.5%+ of initial balance threshold)
+    - Daily loss limits (5% of previous day close)
+    - Max drawdown (10% of initial balance)
+    """
+    rules = FIVERS_10K_RULES
+    target_pct = rules.get_target_pct(step)
+    
+    result = StepResult(
+        step=step,
+        start_date=start_date,
+        starting_balance=starting_balance,
+        target_pct=target_pct,
+    )
+    
+    sorted_trades = sorted(
+        [t for t in trades if t.entry_date >= start_date],
+        key=lambda t: t.entry_date
+    )
+    
+    if not sorted_trades:
+        result.final_balance = starting_balance
+        return result
+    
+    balance = starting_balance
+    prev_day_close_balance = starting_balance
+    current_day: Optional[date] = None
+    current_day_start_balance = starting_balance
+    max_balance = starting_balance
+    
+    daily_pnl_tracker: Dict[date, float] = {}
+    
+    for trade in sorted_trades:
+        trade_day = trade.entry_date.date()
+        exit_day = trade.exit_date.date() if trade.exit_date else trade_day
+        
+        if current_day is None:
+            current_day = trade_day
+            current_day_start_balance = prev_day_close_balance
+        elif trade_day != current_day:
+            daily_pnl_tracker[current_day] = balance - current_day_start_balance
+            
+            prev_day_close_balance = balance
+            current_day = trade_day
+            current_day_start_balance = prev_day_close_balance
+        
+        risk_amount = balance * (risk_per_trade_pct / 100)
+        trade_pnl = trade.total_r * risk_amount
+        balance += trade_pnl
+        
+        result.total_trades += 1
+        if trade.is_winner:
+            result.winning_trades += 1
+        else:
+            result.losing_trades += 1
+        
+        if balance > max_balance:
+            max_balance = balance
+        
+        is_daily_breach, daily_loss_pct = check_daily_loss_breach(
+            balance, current_day_start_balance, rules.max_daily_loss_pct
+        )
+        
+        if daily_loss_pct > result.max_daily_loss_pct:
+            result.max_daily_loss_pct = daily_loss_pct
+        
+        if is_daily_breach:
+            result.failed = True
+            result.fail_reason = f"Daily loss limit breached ({daily_loss_pct:.1f}% > {rules.max_daily_loss_pct}%)"
+            result.end_date = trade.exit_date or trade.entry_date
+            result.final_balance = balance
+            
+            daily_pnl_tracker[current_day] = balance - current_day_start_balance
+            result.daily_pnl = [
+                DailyPnL(d, starting_balance, starting_balance + pnl)
+                for d, pnl in daily_pnl_tracker.items()
+            ]
+            result.profitable_days = count_profitable_days(
+                result.daily_pnl, starting_balance, rules.profitable_day_threshold_pct
+            )
+            return result
+        
+        is_dd_breach, dd_pct = check_max_drawdown_breach(
+            balance, starting_balance, rules.max_total_drawdown_pct
+        )
+        
+        if dd_pct > result.max_drawdown_pct:
+            result.max_drawdown_pct = dd_pct
+        
+        if is_dd_breach:
+            result.failed = True
+            result.fail_reason = f"Max drawdown breached ({dd_pct:.1f}% > {rules.max_total_drawdown_pct}%)"
+            result.end_date = trade.exit_date or trade.entry_date
+            result.final_balance = balance
+            
+            daily_pnl_tracker[current_day] = balance - current_day_start_balance
+            result.daily_pnl = [
+                DailyPnL(d, starting_balance, starting_balance + pnl)
+                for d, pnl in daily_pnl_tracker.items()
+            ]
+            result.profitable_days = count_profitable_days(
+                result.daily_pnl, starting_balance, rules.profitable_day_threshold_pct
+            )
+            return result
+        
+        return_pct = ((balance - starting_balance) / starting_balance) * 100
+        
+        daily_pnl_tracker[current_day] = balance - current_day_start_balance
+        temp_daily_pnl = [
+            DailyPnL(d, starting_balance, starting_balance + pnl)
+            for d, pnl in daily_pnl_tracker.items()
+        ]
+        profitable_day_count = count_profitable_days(
+            temp_daily_pnl, starting_balance, rules.profitable_day_threshold_pct
+        )
+        
+        if return_pct >= target_pct and profitable_day_count >= rules.min_profitable_days:
+            result.passed = True
+            result.end_date = trade.exit_date or trade.entry_date
+            result.final_balance = balance
+            result.daily_pnl = temp_daily_pnl
+            result.profitable_days = profitable_day_count
+            result.total_trading_days = len(daily_pnl_tracker)
+            return result
+    
+    if current_day is not None:
+        daily_pnl_tracker[current_day] = balance - current_day_start_balance
+    
+    result.final_balance = balance
+    result.end_date = sorted_trades[-1].exit_date or sorted_trades[-1].entry_date
+    result.daily_pnl = [
+        DailyPnL(d, starting_balance, starting_balance + pnl)
+        for d, pnl in daily_pnl_tracker.items()
+    ]
+    result.profitable_days = count_profitable_days(
+        result.daily_pnl, starting_balance, rules.profitable_day_threshold_pct
+    )
+    result.total_trading_days = len(daily_pnl_tracker)
+    
+    return_pct = ((balance - starting_balance) / starting_balance) * 100
+    if return_pct >= target_pct and result.profitable_days >= rules.min_profitable_days:
+        result.passed = True
+    
+    return result
+
+
+def run_fivers_challenge(
+    trades: List[BacktestTrade],
+    start_date: datetime,
+    end_date: datetime,
+    starting_balance: float = 10_000.0,
+    risk_per_trade_pct: float = 0.75,
+) -> ChallengeSimulationResult:
+    """
+    Run a complete 5ers 2-step challenge simulation over a date range.
+    
+    This simulates consecutive challenges where:
+    - Each challenge = Step 1 (8% target) + Step 2 (5% target)
+    - After Step 1 passes, Step 2 starts from fresh 10K
+    - After Step 2 passes, a new challenge begins
+    - If any step fails, that challenge is marked failed and a new one starts
+    
+    Returns comprehensive results with all challenges tracked.
+    """
+    rules = FIVERS_10K_RULES
+    
+    result = ChallengeSimulationResult(
+        period_start=start_date,
+        period_end=end_date,
+    )
+    
+    sorted_trades = sorted(
+        [t for t in trades if start_date <= t.entry_date <= end_date],
+        key=lambda t: t.entry_date
+    )
+    
+    if not sorted_trades:
+        result.final_equity = starting_balance
+        return result
+    
+    current_date = start_date
+    remaining_trades = list(sorted_trades)
+    cumulative_profit = 0.0
+    
+    while remaining_trades and current_date < end_date:
+        challenge = FullChallengeResult(start_date=current_date)
+        
+        step1 = simulate_single_step(
+            trades=remaining_trades,
+            step=ChallengeStep.STEP_1,
+            start_date=current_date,
+            starting_balance=starting_balance,
+            risk_per_trade_pct=risk_per_trade_pct,
+        )
+        challenge.step1 = step1
+        
+        result.total_trades += step1.total_trades
+        result.total_profitable_days += step1.profitable_days
+        
+        if step1.passed:
+            result.step1_passes += 1
+            cumulative_profit += step1.return_usd
+            
+            step1_end = step1.end_date or current_date
+            step2_start = step1_end + timedelta(days=1)
+            
+            step2_trades = [t for t in remaining_trades if t.entry_date >= step2_start]
+            
+            step2 = simulate_single_step(
+                trades=step2_trades,
+                step=ChallengeStep.STEP_2,
+                start_date=step2_start,
+                starting_balance=starting_balance,
+                risk_per_trade_pct=risk_per_trade_pct,
+            )
+            challenge.step2 = step2
+            
+            result.total_trades += step2.total_trades
+            result.total_profitable_days += step2.profitable_days
+            
+            if step2.passed:
+                result.step2_passes += 1
+                result.full_challenges_passed += 1
+                cumulative_profit += step2.return_usd
+                challenge.passed = True
+                
+                challenge.end_date = step2.end_date
+                current_date = (step2.end_date or step2_start) + timedelta(days=1)
+            else:
+                if step2.failed:
+                    result.rule_violations.append(
+                        f"Challenge Step 2 failed: {step2.fail_reason}"
+                    )
+                challenge.end_date = step2.end_date
+                current_date = (step2.end_date or step2_start) + timedelta(days=1)
+            
+            remaining_trades = [t for t in remaining_trades if t.entry_date >= current_date]
+        
+        else:
+            if step1.failed:
+                result.rule_violations.append(
+                    f"Challenge Step 1 failed: {step1.fail_reason}"
+                )
+            
+            challenge.end_date = step1.end_date
+            current_date = (step1.end_date or current_date) + timedelta(days=1)
+            remaining_trades = [t for t in remaining_trades if t.entry_date >= current_date]
+        
+        result.challenges.append(challenge)
+        
+        if not remaining_trades:
+            break
+    
+    result.total_profit_usd = cumulative_profit
+    result.total_profit_pct = (cumulative_profit / starting_balance) * 100
+    result.final_equity = starting_balance + cumulative_profit
+    
+    if len(result.challenges) >= 2:
+        step1_stats = {"trades": 0, "wins": 0, "profitable_days": 0, "max_dd": 0.0}
+        step2_stats = {"trades": 0, "wins": 0, "profitable_days": 0, "max_dd": 0.0}
+        
+        for c in result.challenges:
+            if c.step1:
+                step1_stats["trades"] += c.step1.total_trades
+                step1_stats["wins"] += c.step1.winning_trades
+                step1_stats["profitable_days"] += c.step1.profitable_days
+                step1_stats["max_dd"] = max(step1_stats["max_dd"], c.step1.max_drawdown_pct)
+            if c.step2:
+                step2_stats["trades"] += c.step2.total_trades
+                step2_stats["wins"] += c.step2.winning_trades
+                step2_stats["profitable_days"] += c.step2.profitable_days
+                step2_stats["max_dd"] = max(step2_stats["max_dd"], c.step2.max_drawdown_pct)
+        
+        result.step1_stats = step1_stats
+        result.step2_stats = step2_stats
+    
+    return result
+
+
 def simulate_5ers_challenge(
     trades: List[BacktestTrade],
     start_date: datetime,
@@ -440,104 +772,45 @@ def simulate_5ers_challenge(
     risk_per_trade_pct: float = 0.75,
 ) -> FiversChallengeResult:
     """
-    Simulate a 5ers challenge with the given trades.
-    
-    Step 1: 8% target
-    Step 2: 5% target
-    Funded: 5% monthly target
+    Legacy function for backward compatibility.
+    Simulate a single step of the 5ers challenge.
     """
-    targets = {1: 8.0, 2: 5.0}
-    target_pct = targets.get(step, 5.0)
+    challenge_step = ChallengeStep.STEP_1 if step == 1 else ChallengeStep.STEP_2
     
-    result = FiversChallengeResult(
+    step_result = simulate_single_step(
+        trades=trades,
+        step=challenge_step,
         start_date=start_date,
         starting_balance=starting_balance,
-        target_pct=target_pct,
+        risk_per_trade_pct=risk_per_trade_pct,
     )
     
-    sorted_trades = sorted(trades, key=lambda t: t.entry_date)
+    legacy_result = FiversChallengeResult(
+        start_date=start_date,
+        end_date=step_result.end_date,
+        starting_balance=starting_balance,
+        final_balance=step_result.final_balance,
+        target_pct=step_result.target_pct,
+        passed=step_result.passed,
+        failed=step_result.failed,
+        fail_reason=step_result.fail_reason,
+        days_to_pass=step_result.days_to_pass,
+        profitable_days=step_result.profitable_days,
+        trades=trades,
+    )
     
-    balance = starting_balance
-    daily_start_balance = starting_balance
-    current_day = None
-    max_balance = starting_balance
-    
-    for trade in sorted_trades:
-        if trade.entry_date < start_date:
-            continue
-        
-        trade_day = trade.entry_date.date()
-        
-        if current_day is None or trade_day != current_day:
-            if current_day is not None:
-                daily_pnl = balance - daily_start_balance
-                result.daily_pnl[str(current_day)] = daily_pnl
-                
-                if daily_pnl > 0:
-                    result.profitable_days += 1
-            
-            current_day = trade_day
-            daily_start_balance = max(balance, max_balance)
-        
-        risk_amount = balance * (risk_per_trade_pct / 100)
-        trade_pnl = trade.total_r * risk_amount
-        balance += trade_pnl
-        
-        result.trades.append(trade)
-        
-        if balance > max_balance:
-            max_balance = balance
-        
-        daily_loss = daily_start_balance - balance
-        daily_loss_pct = (daily_loss / daily_start_balance) * 100
-        
-        if daily_loss_pct >= result.max_daily_loss_pct:
-            result.failed = True
-            result.fail_reason = f"Daily loss limit breached ({daily_loss_pct:.1f}%)"
-            result.end_date = trade.exit_date or trade.entry_date
-            result.final_balance = balance
-            return result
-        
-        total_loss = starting_balance - balance
-        total_loss_pct = (total_loss / starting_balance) * 100
-        
-        if total_loss_pct >= result.max_total_loss_pct:
-            result.failed = True
-            result.fail_reason = f"Max drawdown breached ({total_loss_pct:.1f}%)"
-            result.end_date = trade.exit_date or trade.entry_date
-            result.final_balance = balance
-            return result
-        
-        return_pct = ((balance - starting_balance) / starting_balance) * 100
-        if return_pct >= target_pct:
-            if result.profitable_days >= 3:
-                result.passed = True
-                result.end_date = trade.exit_date or trade.entry_date
-                result.final_balance = balance
-                
-                days_elapsed = (result.end_date - start_date).days
-                result.days_to_pass = max(1, days_elapsed)
-                return result
-    
-    result.final_balance = balance
-    result.end_date = sorted_trades[-1].exit_date if sorted_trades else start_date
-    
-    return_pct = ((balance - starting_balance) / starting_balance) * 100
-    if return_pct >= target_pct and result.profitable_days >= 3:
-        result.passed = True
-        result.days_to_pass = (result.end_date - start_date).days
-    
-    return result
+    return legacy_result
 
 
 def format_challenge_result(result: FiversChallengeResult) -> str:
     """Format 5ers challenge result for Discord output."""
-    emoji = "✅" if result.passed else ("❌" if result.failed else "⏳")
+    emoji = "PASSED" if result.passed else ("FAILED" if result.failed else "IN PROGRESS")
+    status_emoji = "OK" if result.passed else ("X" if result.failed else "...")
     
     lines = [
-        f"**5ers Challenge Simulation** {emoji}",
+        f"**5ers High Stakes 10K Challenge** [{status_emoji}]",
         f"",
-        f"**Status:** {'PASSED' if result.passed else ('FAILED' if result.failed else 'In Progress')}",
+        f"**Status:** {emoji}",
     ]
     
     if result.passed:
@@ -554,20 +827,26 @@ def format_challenge_result(result: FiversChallengeResult) -> str:
         f"",
         f"**Trades:** {len(result.trades)}",
         f"**Win Rate:** {result.win_rate:.1f}%",
-        f"**Profitable Days:** {result.profitable_days}",
+        f"**Profitable Days:** {result.profitable_days} (min 3 required)",
     ])
     
     return "\n".join(lines)
 
 
 def format_backtest_result(result: BacktestResult) -> str:
-    """Format backtest result for Discord output."""
-    emoji = "✅" if result.total_r > 0 else "❌"
+    """Format backtest result for Discord output with challenge pass/fail."""
+    emoji = "OK" if result.total_r > 0 else "X"
+    
+    step1_status = "PASS" if result.would_pass_step1() else "FAIL"
+    step2_status = "PASS" if result.would_pass_step2() else "FAIL"
     
     lines = [
-        f"**Backtest Results** {emoji}",
+        f"**Backtest Results** [{emoji}]",
         f"",
         f"**{result.symbol}** | {result.period_start.strftime('%b %Y')} - {result.period_end.strftime('%b %Y')}",
+        f"",
+        f"**Account:** ${result.starting_balance:,.0f} (10K 5ers High Stakes)",
+        f"**Risk/Trade:** {result.risk_per_trade_pct}%",
         f"",
         f"**Total Trades:** {result.total_trades}",
         f"**Win Rate:** {result.win_rate:.1f}%",
@@ -575,8 +854,13 @@ def format_backtest_result(result: BacktestResult) -> str:
         f"",
         f"**Total R:** {result.total_r:+.2f}R",
         f"**Avg R/Trade:** {result.avg_r_per_trade:+.2f}R",
-        f"**Net Return:** {result.net_return_pct:+.1f}% (at 1% risk)",
-        f"**Max Drawdown:** {result.max_drawdown:.2f}R",
+        f"**Net Return:** {result.net_return_pct:+.1f}% (${result.net_return_usd:+,.2f})",
+        f"**Final Balance:** ${result.final_balance:,.2f}",
+        f"**Max Drawdown:** {result.max_drawdown_pct:.2f}%",
+        f"",
+        f"**Challenge Status:**",
+        f"  Step 1 (8% target): {step1_status}",
+        f"  Step 2 (5% target): {step2_status}",
         f"",
         f"**Exit Breakdown:**",
     ]

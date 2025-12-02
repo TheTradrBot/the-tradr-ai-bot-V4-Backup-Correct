@@ -2,7 +2,7 @@ import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import os
 
@@ -18,6 +18,9 @@ from config import (
     ENERGIES,
     CRYPTO_ASSETS,
     SIGNAL_MODE,
+    STEP1_PROFIT_TARGET_PCT,
+    STEP2_PROFIT_TARGET_PCT,
+    MIN_PROFITABLE_DAYS,
 )
 
 from strategy import (
@@ -51,6 +54,19 @@ from config import ACCOUNT_SIZE, RISK_PER_TRADE_PCT
 
 from backtest import run_backtest
 from data import get_ohlcv, get_cache_stats, clear_cache, get_current_prices
+
+from challenge_rules import (
+    FIVERS_10K_RULES,
+    format_challenge_summary,
+    analyze_step_difficulty,
+)
+from src.backtest.engine import (
+    run_fivers_challenge,
+    BacktestTrade,
+    format_challenge_result as format_step_result,
+    format_backtest_result as format_backtest_10k,
+    BacktestResult,
+)
 
 
 ACTIVE_TRADES: dict[str, ScanResult] = {}
@@ -543,22 +559,63 @@ async def live(interaction: discord.Interaction):
         await interaction.followup.send(f"Error fetching live prices: {str(e)}")
 
 
-@bot.tree.command(name="backtest", description='Backtest the strategy. Example: /backtest EUR_USD "Jan 2024 - Dec 2024"')
+@bot.tree.command(name="backtest", description='Backtest strategy (10K account). Example: /backtest EUR_USD "Jan 2024 - Dec 2024"')
 @app_commands.describe(
     asset="The asset to backtest (e.g., EUR_USD)",
     period="The time period (e.g., 'Jan 2024 - Dec 2024')"
 )
 async def backtest_cmd(interaction: discord.Interaction, asset: str, period: str):
+    """Run backtest using 10K 5ers High Stakes account rules."""
     await interaction.response.defer()
     
     try:
         result = run_backtest(asset.upper().replace("/", "_"), period)
-        msg = format_backtest_result(result)
+        
+        total_trades = result.get('total_trades', 0)
+        win_rate = result.get('win_rate', 0)
+        net_return_pct = result.get('net_return_pct', 0)
+        max_dd_pct = result.get('max_drawdown_pct', 0)
+        trades = result.get('trades', [])
+        
+        total_r = sum(t.get('rr', 0) for t in trades) if trades else 0
+        avg_r = total_r / total_trades if total_trades > 0 else 0
+        
+        would_pass_step1 = net_return_pct >= STEP1_PROFIT_TARGET_PCT
+        would_pass_step2 = net_return_pct >= STEP2_PROFIT_TARGET_PCT
+        
+        step1_status = "PASS" if would_pass_step1 else "FAIL"
+        step2_status = "PASS" if would_pass_step2 else "FAIL"
+        
+        profit_usd = FIVERS_10K_RULES.account_size * (net_return_pct / 100)
+        final_balance = FIVERS_10K_RULES.account_size + profit_usd
+        
+        msg = (
+            f"**Backtest Results** - 5ers High Stakes 10K\n\n"
+            f"**{asset.upper()}** | {period}\n\n"
+            f"**Account:** ${FIVERS_10K_RULES.account_size:,.0f}\n"
+            f"**Risk/Trade:** {FIVERS_10K_RULES.risk_per_trade_pct}%\n\n"
+            f"**Total Trades:** {total_trades}\n"
+            f"**Win Rate:** {win_rate:.1f}%\n"
+            f"**Total R:** {total_r:+.2f}R\n"
+            f"**Avg R/Trade:** {avg_r:+.2f}R\n\n"
+            f"**Net Return:** {net_return_pct:+.1f}% (${profit_usd:+,.2f})\n"
+            f"**Final Balance:** ${final_balance:,.2f}\n"
+            f"**Max Drawdown:** {max_dd_pct:.2f}%\n\n"
+            f"**Challenge Status:**\n"
+            f"  Step 1 ({STEP1_PROFIT_TARGET_PCT}% target): {step1_status}\n"
+            f"  Step 2 ({STEP2_PROFIT_TARGET_PCT}% target): {step2_status}\n"
+        )
+        
+        if max_dd_pct >= FIVERS_10K_RULES.max_total_drawdown_pct:
+            msg += f"\n**WARNING:** Max drawdown {max_dd_pct:.1f}% would breach 10% limit!"
+        
         chunks = split_message(msg, limit=1900)
         for chunk in chunks:
             await interaction.followup.send(chunk)
     except Exception as e:
         print(f"[/backtest] Error backtesting {asset}: {e}")
+        import traceback
+        traceback.print_exc()
         await interaction.followup.send(f"Error running backtest for **{asset}**: {str(e)}")
 
 
@@ -591,48 +648,54 @@ async def cleartrades(interaction: discord.Interaction):
     await interaction.response.send_message(f"Cleared {count} active trades.", ephemeral=True)
 
 
-@bot.tree.command(name="challenge", description="Simulate 5ers challenge for a month. Example: /challenge Jan 24")
+@bot.tree.command(name="challenge", description="Simulate 5ers 2-step challenge. Example: /challenge Jan 2024 Jul 2024")
 @app_commands.describe(
-    month_year="Month and year (e.g., 'Jan 24', 'Dec 2024')"
+    start_month="Start month (e.g., 'Jan')",
+    start_year="Start year (e.g., '2024' or '24')",
+    end_month="End month (e.g., 'Jul')",
+    end_year="End year (e.g., '2024' or '24')"
 )
-async def challenge_cmd(interaction: discord.Interaction, month_year: str):
-    """Simulate a 5ers 10K High Stakes challenge starting from the specified month."""
+async def challenge_cmd(
+    interaction: discord.Interaction,
+    start_month: str,
+    start_year: str,
+    end_month: str,
+    end_year: str
+):
+    """
+    Simulate 5ers 10K High Stakes 2-step challenge over a date range.
+    
+    Each challenge = Step 1 (8% target) + Step 2 (5% target).
+    Both steps require 3 profitable days (0.5%+ of initial balance).
+    """
     await interaction.response.defer()
     
     try:
-        from src.backtest.engine import (
-            simulate_5ers_challenge,
-            format_challenge_result,
-            BacktestTrade,
-        )
-        from backtest import run_backtest
-        
-        month_year = month_year.strip()
         month_map = {
             "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
             "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12
         }
         
-        parts = month_year.lower().split()
-        if len(parts) >= 2:
-            month = month_map.get(parts[0][:3], 1)
-            year = int(parts[1])
-            if year < 100:
-                year += 2000
+        s_month = month_map.get(start_month.lower()[:3], 1)
+        s_year = int(start_year)
+        if s_year < 100:
+            s_year += 2000
+        
+        e_month = month_map.get(end_month.lower()[:3], 12)
+        e_year = int(end_year)
+        if e_year < 100:
+            e_year += 2000
+        
+        start_date = datetime(s_year, s_month, 1)
+        if e_month == 12:
+            end_date = datetime(e_year + 1, 1, 1) - timedelta(days=1)
         else:
-            month = 1
-            year = 2024
+            end_date = datetime(e_year, e_month + 1, 1) - timedelta(days=1)
         
-        start_date = datetime(year, month, 1)
-        if month == 12:
-            end_date = datetime(year + 1, 1, 1) - timedelta(days=1)
-        else:
-            end_date = datetime(year, month + 1, 1) - timedelta(days=1)
+        period = f"{start_date.strftime('%d %b %Y')} - {end_date.strftime('%d %b %Y')}"
         
-        period = f"{start_date.strftime('%b %Y')} - {end_date.strftime('%b %Y')}"
-        
-        assets = ["EUR_USD", "GBP_USD", "XAU_USD", "USD_JPY"]
-        all_trades = []
+        assets = ["EUR_USD", "GBP_USD", "XAU_USD", "USD_JPY", "NZD_USD"]
+        all_trades: list[BacktestTrade] = []
         asset_results = []
         
         for asset in assets:
@@ -693,25 +756,30 @@ async def challenge_cmd(interaction: discord.Interaction, month_year: str):
         
         if not all_trades:
             await interaction.followup.send(
-                f"**5ers Challenge - {start_date.strftime('%B %Y')}**\n\n"
+                f"**5ers Challenge - {start_date.strftime('%b %Y')} to {end_date.strftime('%b %Y')}**\n\n"
                 f"No historical trade data available for this period.\n"
                 f"Please ensure OANDA API is configured for live scanning."
             )
             return
         
-        challenge_result = simulate_5ers_challenge(
+        challenge_result = run_fivers_challenge(
             trades=all_trades,
             start_date=start_date,
-            step=1,
-            starting_balance=10000.0,
-            risk_per_trade_pct=0.75,
+            end_date=end_date,
+            starting_balance=FIVERS_10K_RULES.account_size,
+            risk_per_trade_pct=FIVERS_10K_RULES.risk_per_trade_pct,
         )
         
-        msg = format_challenge_result(challenge_result)
-        msg = f"**{start_date.strftime('%B %Y')} Challenge**\n\n{msg}"
+        msg = format_challenge_summary(challenge_result)
         
         if asset_results:
             msg += "\n\n**Assets Analyzed:**\n" + "\n".join(f"- {r}" for r in asset_results)
+        
+        if challenge_result.challenges and len(challenge_result.challenges) >= 1:
+            first_challenge = challenge_result.challenges[0]
+            if first_challenge.step1 and first_challenge.step2:
+                analysis = analyze_step_difficulty(first_challenge.step1, first_challenge.step2)
+                msg += f"\n\n{analysis}"
         
         chunks = split_message(msg, limit=1900)
         for chunk in chunks:

@@ -3,11 +3,12 @@
 Analyzes each month from Jan 2024 to Nov 2025 to see if the bot's strategy 
 would have passed the 5ers challenge.
 
-Challenge Requirements:
-- Step 1: 8% profit target
-- Step 2: 5% profit target
+Challenge Requirements (5ers High Stakes 10K):
+- Step 1: 8% profit target + 3 profitable days
+- Step 2: 5% profit target + 3 profitable days
 - Max Daily Loss: 5%
 - Max Total Drawdown: 10%
+- Profitable day = 0.5%+ of initial balance profit
 """
 
 from datetime import datetime, date, timedelta
@@ -15,17 +16,14 @@ from typing import Dict, List, Optional, Tuple
 import calendar
 
 from backtest import run_backtest
-from config import (
-    ACCOUNT_SIZE, 
-    RISK_PER_TRADE_PCT,
-    MAX_DAILY_LOSS_PCT,
-    MAX_TOTAL_LOSS_PCT,
-)
+from challenge_rules import FIVERS_10K_RULES
 
-STEP1_TARGET_PCT = 8.0
-STEP2_TARGET_PCT = 5.0
-MAX_DAILY_LOSS = MAX_DAILY_LOSS_PCT * 100
-MAX_DRAWDOWN = MAX_TOTAL_LOSS_PCT * 100
+STEP1_TARGET_PCT = FIVERS_10K_RULES.step1_profit_target_pct
+STEP2_TARGET_PCT = FIVERS_10K_RULES.step2_profit_target_pct
+MAX_DAILY_LOSS = FIVERS_10K_RULES.max_daily_loss_pct
+MAX_DRAWDOWN = FIVERS_10K_RULES.max_total_drawdown_pct
+ACCOUNT_SIZE = FIVERS_10K_RULES.account_size
+RISK_PER_TRADE_PCT = FIVERS_10K_RULES.risk_per_trade_pct / 100
 
 ENABLED_ASSETS = ["XAU_USD", "USD_JPY", "NZD_USD", "GBP_USD"]
 
