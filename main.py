@@ -453,10 +453,15 @@ async def help_command(interaction: discord.Interaction):
 `/cleartrades` - Clear all active trade tracking
 
 **Analysis:**
-`/backtest [asset] [period]` - Test strategy performance
-  Example: `/backtest EUR_USD "Jan 2024 - Dec 2024"`
-`/challenge [month year]` - Simulate 5ers challenge for a month
-  Example: `/challenge Jan 24`
+`/backtest [period] [asset]` - Test strategy performance
+  Examples: 
+  - `/backtest "Jan 2024 - Dec 2024"` (all assets)
+  - `/backtest "Jan 2024 - Dec 2024" EUR_USD` (single asset)
+  - `/backtest "Mar 2023 - Nov 2025"` (any period)
+`/output [asset] [period]` - Export backtest to CSV
+  Example: `/output EUR_USD "Jan 2024 - Dec 2024"`
+`/challenge [start_month] [start_year] [end_month] [end_year]` - Simulate 5ers challenges
+  Example: `/challenge Jan 2024 Dec 2024`
 
 **System:**
 `/cache` - View cache statistics
@@ -723,8 +728,7 @@ async def backtest_cmd(interaction: discord.Interaction, period: str, asset: str
             profit_usd = FIVERS_10K_RULES.account_size * (net_return_pct / 100)
             final_balance = FIVERS_10K_RULES.account_size + profit_usd
             
-            from config import SIGNAL_MODE
-        min_conf = 4 if SIGNAL_MODE == "standard" else 3
+            min_conf = 4 if SIGNAL_MODE == "standard" else 3
         
         msg = (
             f"**Backtest Results** - 5ers High Stakes 10K\n\n"
@@ -805,7 +809,6 @@ async def backtest_cmd(interaction: discord.Interaction, period: str, asset: str
         total_return_pct = total_r_all * FIVERS_10K_RULES.risk_per_trade_pct
         total_profit_usd = FIVERS_10K_RULES.account_size * (total_return_pct / 100)
         
-        from config import SIGNAL_MODE
         min_conf = 4 if SIGNAL_MODE == "standard" else 3
         
         msg = (
