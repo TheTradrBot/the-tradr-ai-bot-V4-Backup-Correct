@@ -60,7 +60,7 @@ def create_setup_embed(
 
     Args:
         symbol: Trading instrument (e.g., "EUR_USD")
-        direction: "bullish" or "bearish"
+        direction: "bullish", "bearish", "long", or "short"
         timeframe: Chart timeframe (e.g., "H4")
         entry: Entry price
         stop_loss: Stop loss price
@@ -74,7 +74,7 @@ def create_setup_embed(
     Returns:
         discord.Embed object ready to send
     """
-    is_long = direction.lower() == "bullish"
+    is_long = direction.lower() in ("bullish", "long")
     emoji = "🟢" if is_long else "🔴"
     dir_text = "LONG" if is_long else "SHORT"
     color = COLOR_LONG if is_long else COLOR_SHORT
@@ -212,8 +212,8 @@ def create_tp_hit_embed(
     """Create embed for TP hit notification."""
     color = 0x00FF00  # Green
 
-    direction_emoji = "📈" if direction.lower() == "bullish" else "📉"
-    direction_text = "BULLISH" if direction.lower() == "bullish" else "BEARISH"
+    direction_emoji = "📈" if direction.lower() in ("bullish", "long") else "📉"
+    direction_text = "LONG" if direction.lower() in ("bullish", "long") else "SHORT"
 
     display_symbol = symbol.replace("_", "/")
     title = f"🎯 TP{tp_level} Hit - {display_symbol} {direction_text}"

@@ -723,11 +723,15 @@ async def backtest_cmd(interaction: discord.Interaction, period: str, asset: str
             profit_usd = FIVERS_10K_RULES.account_size * (net_return_pct / 100)
             final_balance = FIVERS_10K_RULES.account_size + profit_usd
             
-            msg = (
+            from config import SIGNAL_MODE
+        min_conf = 4 if SIGNAL_MODE == "standard" else 3
+        
+        msg = (
                 f"**Backtest Results** - 5ers High Stakes 10K\n\n"
                 f"**{asset_upper}** | {period}\n\n"
                 f"**Account:** ${FIVERS_10K_RULES.account_size:,.0f}\n"
-                f"**Risk/Trade:** {FIVERS_10K_RULES.risk_per_trade_pct}%\n\n"
+                f"**Risk/Trade:** {FIVERS_10K_RULES.risk_per_trade_pct}%\n"
+                f"**Min Confluence:** {min_conf}/7 (mode: {SIGNAL_MODE})\n\n"
                 f"**Total Trades:** {total_trades}\n"
                 f"**Win Rate:** {win_rate:.1f}%\n"
                 f"**Total R:** {total_r:+.2f}R\n"
@@ -801,10 +805,14 @@ async def backtest_cmd(interaction: discord.Interaction, period: str, asset: str
         total_return_pct = total_r_all * FIVERS_10K_RULES.risk_per_trade_pct
         total_profit_usd = FIVERS_10K_RULES.account_size * (total_return_pct / 100)
         
+        from config import SIGNAL_MODE
+        min_conf = 4 if SIGNAL_MODE == "standard" else 3
+        
         msg = (
             f"**Multi-Asset Backtest Results** - 5ers High Stakes 10K\n\n"
             f"**Period:** {period}\n"
-            f"**Assets Tested:** {len(all_results)}\n\n"
+            f"**Assets Tested:** {len(all_results)}\n"
+            f"**Min Confluence:** {min_conf}/7 (mode: {SIGNAL_MODE})\n\n"
             f"**Combined Performance:**\n"
             f"Total Trades: {total_trades_all}\n"
             f"Win Rate: {avg_win_rate:.1f}%\n"

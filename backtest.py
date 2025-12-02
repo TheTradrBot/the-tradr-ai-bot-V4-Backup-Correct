@@ -523,6 +523,7 @@ def run_backtest(asset: str, period: str) -> Dict:
 
     notes_text = (
         f"Backtest Summary - {asset} ({period_label}, 100K 5%ers model)\n"
+        f"Min confluence: {min_trade_conf}/7 (mode: {SIGNAL_MODE})\n"
         f"Trades: {total_trades}\n"
         f"Win rate: {win_rate:.1f}%\n"
         f"Total profit: +${total_profit_usd:,.0f} (+{net_return_pct:.1f}%)\n"
