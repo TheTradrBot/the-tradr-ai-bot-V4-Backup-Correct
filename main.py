@@ -727,25 +727,25 @@ async def backtest_cmd(interaction: discord.Interaction, period: str, asset: str
         min_conf = 4 if SIGNAL_MODE == "standard" else 3
         
         msg = (
-                f"**Backtest Results** - 5ers High Stakes 10K\n\n"
-                f"**{asset_upper}** | {period}\n\n"
-                f"**Account:** ${FIVERS_10K_RULES.account_size:,.0f}\n"
-                f"**Risk/Trade:** {FIVERS_10K_RULES.risk_per_trade_pct}%\n"
-                f"**Min Confluence:** {min_conf}/7 (mode: {SIGNAL_MODE})\n\n"
-                f"**Total Trades:** {total_trades}\n"
-                f"**Win Rate:** {win_rate:.1f}%\n"
-                f"**Total R:** {total_r:+.2f}R\n"
-                f"**Avg R/Trade:** {avg_r:+.2f}R\n\n"
-                f"**Net Return:** {net_return_pct:+.1f}% (${profit_usd:+,.2f})\n"
-                f"**Final Balance:** ${final_balance:,.2f}\n"
-                f"**Max Drawdown:** {max_dd_pct:.2f}%\n\n"
-                f"**Challenge Status:**\n"
-                f"  Step 1 ({STEP1_PROFIT_TARGET_PCT}% target): {step1_status}\n"
-                f"  Step 2 ({STEP2_PROFIT_TARGET_PCT}% target): {step2_status}\n"
-            )
-            
-            if max_dd_pct >= FIVERS_10K_RULES.max_total_drawdown_pct:
-                msg += f"\n**WARNING:** Max drawdown {max_dd_pct:.1f}% would breach 10% limit!"
+            f"**Backtest Results** - 5ers High Stakes 10K\n\n"
+            f"**{asset_upper}** | {period}\n\n"
+            f"**Account:** ${FIVERS_10K_RULES.account_size:,.0f}\n"
+            f"**Risk/Trade:** {FIVERS_10K_RULES.risk_per_trade_pct}%\n"
+            f"**Min Confluence:** {min_conf}/7 (mode: {SIGNAL_MODE})\n\n"
+            f"**Total Trades:** {total_trades}\n"
+            f"**Win Rate:** {win_rate:.1f}%\n"
+            f"**Total R:** {total_r:+.2f}R\n"
+            f"**Avg R/Trade:** {avg_r:+.2f}R\n\n"
+            f"**Net Return:** {net_return_pct:+.1f}% (${profit_usd:+,.2f})\n"
+            f"**Final Balance:** ${final_balance:,.2f}\n"
+            f"**Max Drawdown:** {max_dd_pct:.2f}%\n\n"
+            f"**Challenge Status:**\n"
+            f"  Step 1 ({STEP1_PROFIT_TARGET_PCT}% target): {step1_status}\n"
+            f"  Step 2 ({STEP2_PROFIT_TARGET_PCT}% target): {step2_status}\n"
+        )
+        
+        if max_dd_pct >= FIVERS_10K_RULES.max_total_drawdown_pct:
+            msg += f"\n**WARNING:** Max drawdown {max_dd_pct:.1f}% would breach 10% limit!"
             
             chunks = split_message(msg, limit=1900)
             for chunk in chunks:
@@ -1094,10 +1094,21 @@ async def challenge_cmd(
             risk_per_trade_pct=FIVERS_10K_RULES.risk_per_trade_pct,
         )
         
+        # Count challenges passed/failed
+        challenges_attempted = len(challenge_result.challenges)
+        challenges_passed = sum(1 for c in challenge_result.challenges if c.passed)
+        challenges_failed = challenges_attempted - challenges_passed
+        
         msg = format_challenge_summary(challenge_result)
         
+        # Add passed/failed summary
+        msg += f"\n**Summary:**\n"
+        msg += f"- Challenges Attempted: {challenges_attempted}\n"
+        msg += f"- Challenges Passed: {challenges_passed}\n"
+        msg += f"- Challenges Failed: {challenges_failed}\n"
+        
         if asset_results:
-            msg += "\n\n**Assets Analyzed:**\n" + "\n".join(f"- {r}" for r in asset_results)
+            msg += "\n**Assets Analyzed:**\n" + "\n".join(f"- {r}" for r in asset_results)
         
         if challenge_result.challenges and len(challenge_result.challenges) >= 1:
             first_challenge = challenge_result.challenges[0]

@@ -332,20 +332,29 @@ def format_challenge_summary(result: ChallengeSimulationResult) -> str:
     from config import SIGNAL_MODE
     min_conf = 4 if SIGNAL_MODE == "standard" else 3
 
+    challenges_attempted = len(result.challenges)
+    challenges_failed = challenges_attempted - result.full_challenges_passed
+    
     lines = [
         f"**5ers Challenge Simulation** - {result.period_start.strftime('%b %Y')} to {result.period_end.strftime('%b %Y')}",
         f"**Min Confluence:** {min_conf}/7 (mode: {SIGNAL_MODE})",
         f"",
-        f"**Challenges Attempted:** {len(result.challenges)}",
-        f"**Challenges Passed:** {result.full_challenges_passed}",
-        f"**Step 1 Passes:** {result.step1_passes}",
-        f"**Step 2 Passes:** {result.step2_passes}",
+        f"**Challenge Results:**",
+        f"  Attempted: {challenges_attempted}",
+        f"  ✅ Passed: {result.full_challenges_passed}",
+        f"  ❌ Failed: {challenges_failed}",
         f"",
-        f"**Total Trades:** {result.total_trades}",
-        f"**Total Profitable Days:** {result.total_profitable_days}",
+        f"**Step Breakdown:**",
+        f"  Step 1 Passes: {result.step1_passes}",
+        f"  Step 2 Passes: {result.step2_passes}",
         f"",
-        f"**Cumulative Profit:** ${result.total_profit_usd:+,.2f} ({result.total_profit_pct:+.1f}%)",
-        f"**Final Equity:** ${result.final_equity:,.2f}",
+        f"**Trading Stats:**",
+        f"  Total Trades: {result.total_trades}",
+        f"  Profitable Days: {result.total_profitable_days}",
+        f"",
+        f"**Performance:**",
+        f"  Cumulative Profit: ${result.total_profit_usd:+,.2f} ({result.total_profit_pct:+.1f}%)",
+        f"  Final Equity: ${result.final_equity:,.2f}",
         f"",
     ]
 
