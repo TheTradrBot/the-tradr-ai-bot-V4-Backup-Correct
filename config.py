@@ -9,16 +9,26 @@ You keep:
 
 import os
 
+from challenge_rules import FIVERS_10K_RULES
 
-# ==== 5%ers 100K High Stakes Risk Model ====
 
-ACCOUNT_CURRENCY = "USD"
-ACCOUNT_SIZE = 100_000
-MAX_DAILY_LOSS_PCT = 0.05
-MAX_TOTAL_LOSS_PCT = 0.10
-RISK_PER_TRADE_PCT = 0.01
-MAX_OPEN_RISK_PCT = 0.03
+# ==== 5%ers High Stakes 10K Risk Model ====
+# All challenge rules are centralized in challenge_rules.py
+# These values are exported for backward compatibility
+
+ACCOUNT_CURRENCY = FIVERS_10K_RULES.account_currency
+ACCOUNT_SIZE = FIVERS_10K_RULES.account_size  # 10,000 USD
+MAX_DAILY_LOSS_PCT = FIVERS_10K_RULES.max_daily_loss_pct / 100  # 0.05 (5%)
+MAX_TOTAL_LOSS_PCT = FIVERS_10K_RULES.max_total_drawdown_pct / 100  # 0.10 (10%)
+RISK_PER_TRADE_PCT = FIVERS_10K_RULES.risk_per_trade_pct / 100  # 0.0075 (0.75%)
+MAX_OPEN_RISK_PCT = FIVERS_10K_RULES.max_open_risk_pct / 100  # 0.03 (3%)
 MIN_WITHDRAWAL_USD = 150
+
+# Challenge-specific constants
+STEP1_PROFIT_TARGET_PCT = FIVERS_10K_RULES.step1_profit_target_pct  # 8%
+STEP2_PROFIT_TARGET_PCT = FIVERS_10K_RULES.step2_profit_target_pct  # 5%
+MIN_PROFITABLE_DAYS = FIVERS_10K_RULES.min_profitable_days  # 3 days
+PROFITABLE_DAY_THRESHOLD_PCT = FIVERS_10K_RULES.profitable_day_threshold_pct  # 0.5%
 
 CONTRACT_SPECS = {
     "USD_JPY": {"pip_value": 0.01, "contract_size": 100000, "pip_location": 2},
