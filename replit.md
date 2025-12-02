@@ -1,404 +1,59 @@
-# Blueprint Trader AI v2.0
+# Blueprint Trader AI
 
 ## Overview
-
-Blueprint Trader AI is an automated trading signal bot that scans multiple markets (forex, metals, indices, energies, crypto) using the HTF Confluence Strategy v4. The bot identifies high-probability trading opportunities by analyzing 10 confluence pillars across monthly, weekly, daily, and 4-hour timeframes. It integrates with Discord for signal delivery and uses OANDA's practice API for market data.
-
-**New in v2.0:**
-- Confluence scoring system (0-10 points)
-- 5ers challenge simulation command (`/challenge`)
-- Historical data infrastructure for backtesting from 2003
-- Improved backtest accuracy with proper trade accounting
-
-## 5%ers 10K High Stakes Risk Model
-
-The bot is configured for The 5%ers 10K High Stakes account with the following risk settings:
-
-### Account Configuration (10K High Stakes)
-- **Account Size:** $10,000 USD
-- **Risk Per Trade:** 0.75% ($75)
-- **Max Daily Loss:** 5% ($500)
-- **Max Total Drawdown:** 10% ($1,000)
-- **Step 1 Target:** 8% profit ($800)
-- **Step 2 Target:** 5% profit ($500)
-
-### Position Sizing
-The bot calculates lot sizes based on:
-1. Account size and risk percentage
-2. Stop loss distance in pips
-3. Pip value per lot for each instrument
-
-Example: For a 40-pip stop on EUR/USD with 0.75% risk:
-- Risk USD = $10,000 × 0.75% = $75
-- Pip value per lot = $10
-- Lot size = $75 ÷ (40 × $10) = 0.19 lots
-
-### Discord Outputs
-Trade signals include:
-- **Entry & Levels** - Entry, SL, TP1/TP2/TP3 with R:R values
-- **Risk & Lot Size** - Account size, risk %, USD risk, lot size
-- **Confluence** - Technical factors aligned for the trade
-
-### Key Files
-- `config.py` - Risk configuration (ACCOUNT_SIZE, RISK_PER_TRADE_PCT, etc.)
-- `position_sizing.py` - Lot size calculation functions
-- `discord_output.py` - Professional Discord embed formatting
-
-## Recent Changes
-
-**December 2, 2025 - Discord Output Refactor & Anti-Spam (MAJOR UPDATE)**
-- **No Startup Spam**: Bot no longer sends any Discord messages on startup - only console logs
-- **Delayed First Autoscan**: First autoscan is delayed by 4 hours after startup (configurable via FIRST_SCAN_DELAY_HOURS)
-- **Improved Channel Routing**:
-  - Autoscan results -> SCAN channel only
-  - New trade signals -> TRADES channel (with brief note in SCAN channel)
-  - TP/SL updates -> TRADE_UPDATES channel
-- **Enhanced Trade State Tracking** (`trade_state.py`):
-  - Notification tracking (notified_open, notified_tp1, etc.) prevents duplicate Discord messages
-  - Entry datetime stored per trade for accurate timestamps in updates
-  - Persists across restarts via trade_state.json
-- **Channel Configuration** (in `config.py`):
-  - Channel IDs can be set via environment variables (DISCORD_SCAN_CHANNEL_ID, DISCORD_TRADES_CHANNEL_ID, DISCORD_TRADE_UPDATES_CHANNEL_ID)
-  - Graceful fallback to default IDs if not set
-- **Error Handling**: Discord send operations wrapped in try/except to prevent crashes
-- **Clean MT5 Hook Ready**: Structure prepared for future 5%ers High Stakes 10K MT5 integration
-
-**December 2, 2025 - 5ers High Stakes 10K Challenge Simulation (MAJOR UPDATE)**
-- Created centralized `challenge_rules.py` with all 5%ers rule parameters:
-  - Account: $10,000, Risk: 0.75% ($75/trade), Step 1: 8%, Step 2: 5%
-  - Max daily loss: 5%, Max drawdown: 10%, Min profitable days: 3
-  - Profitable day threshold: 0.5% of initial balance ($50+)
-- Rewrote `src/backtest/engine.py` with comprehensive multi-step challenge simulation:
-  - `simulate_single_step()` - Simulates one step with daily PnL tracking
-  - `run_fivers_challenge()` - Full 2-step challenge over date range
-  - Proper daily drawdown resets, profitable day counting, rule breach detection
-- Updated `/challenge` command: Now accepts date ranges (start_month start_year end_month end_year)
-  - Simulates consecutive 2-step challenges over the period
-  - Shows Step 1 vs Step 2 pass rates and difficulty analysis
-- Updated `/backtest` command: Now shows 10K account context and challenge pass/fail
-- Updated `challenge_analysis.py` to use centralized rules from challenge_rules.py
-
-**November 26, 2025 - Live Price Fix for Trade Activation**
-- Fixed critical bug: Trade entries now use **live OANDA prices** instead of historical candle close prices
-- Trade activation is now **gated on live price availability** - no fallback to stale data
-- TP/SL monitoring in check_trade_updates now uses live prices instead of H4/D candle closes
-- Entry datetime is now properly recorded in TRADE_ENTRY_DATES for accurate timestamps
-- This prevents issues like BTC showing entry at 94250 when actual price was 90000
-
-**November 26, 2025 - 5%ers Risk Model & Discord Embeds**
-- Added 5%ers 100K High Stakes account risk configuration
-- Implemented position sizing with lot size calculations
-- Professional Discord embeds for trade setups and updates
-- Backtest now shows total profit in $ and % with 5%ers model
-- Added max drawdown tracking to backtest results
-
-**November 26, 2025 - Strategy Optimization v2 - Higher Win Rate Focus**
-
-### Performance Summary (Backtest Jan-Dec 2024 - Conservative Exit Logic)
-- Total Trades: 121 trades across 4 enabled assets
-- Average Win Rate: 63.6%
-- Total Return: +74.6%
-- Enabled Assets:
-  - XAU_USD: 29 trades, 79.3% WR, +27.9% return
-  - USD_JPY: 49 trades, 63.3% WR, +28.8% return
-  - NZD_USD: 24 trades, 62.5% WR, +10.2% return
-  - GBP_USD: 19 trades, 47.4% WR, +7.7% return
-- Disabled Assets (need pair-specific tuning): EUR_USD, AUD_USD, USD_CHF, USD_CAD
-
-**Note:** Exit logic is fully conservative - TP2/TP3 only credited after TP1 hit on previous bar. This produces realistic results suitable for live trading expectations.
-
-### Key Optimizations (v2)
-1. **Trailing Stop System** - After TP1 hit, SL moves to breakeven (entry price)
-2. **Conservative Exit Logic** - SL checked first when both SL and TP hit same bar
-3. **Same-bar TP1 Validation** - After TP1, immediately checks if trailing stop also hit
-4. **Wider Stop Losses** - ATR multiplier increased to 1.5x for better protection
-5. **Tighter Take Profits** - TP1 at 0.6R, TP2 at 1.1R for higher hit rates
-6. **Extended Fibonacci Zones** - 38.2% to 88.6% retracement window
-7. **Better Liquidity Detection** - Increased lookback to 12 candles, 80-bar history
-
-### Strategy Changes
-- Reduced confluence threshold from 3 to 2 for more trade opportunities
-- Simplified activation: confluence >= 2 and quality_factors >= 1
-- SL-first priority in exit logic for conservative backtest results
-- Structure-based stop loss with swing point detection
-
-### Backtest Improvements
-- Trailing stop logic protects profits after TP1
-- TP1+Trail exit category for trades that hit TP1 then trail out
-- Win rate calculation includes all profitable exits
-
-### Performance & Caching
-- Added intelligent caching layer (`cache.py`) for OANDA API responses
-- TTL-based caching: Monthly (1hr), Weekly (30min), Daily (10min), H4 (5min)
-- Cache statistics and management commands (/cache, /clearcache)
-
-### Discord UX Improvements
-- Cleaner autoscan output with active/watching counts
-- Detailed single asset scans with setup type and "what to look for"
-- Better formatting with emojis for direction (🟢/🔴)
-- Improved help command with all available commands
+Blueprint Trader AI is an automated trading signal bot designed to identify high-probability trading opportunities across multiple markets (forex, metals, indices, energies, crypto). It utilizes the HTF Confluence Strategy v4, analyzing 10 confluence pillars across various timeframes (monthly, weekly, daily, 4-hour). The bot integrates with Discord for signal delivery and uses OANDA's practice API for market data. It includes a confluence scoring system, a 5%ers challenge simulation, and historical data infrastructure for backtesting from 2003 with improved accuracy. The project aims to provide realistic trade simulations and signal generation, particularly for proprietary trading firm challenges like The 5%ers 10K High Stakes account.
 
 ## User Preferences
-
 Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
 ### Core Components
+The system is built around a modular architecture:
+- **Strategy Engine (`strategy.py`)**: Evaluates 7 confluence pillars across multiple timeframes.
+- **Backtest Engine (`backtest.py`)**: Performs walk-forward simulations with conservative exit logic.
+- **Data Layer (`data.py`)**: Handles OANDA v20 API integration and data retrieval.
+- **Cache System (`cache.py`)**: Provides TTL-based, thread-safe in-memory caching for API responses.
+- **Formatting (`formatting.py`)**: Manages Discord message formatting for scans, summaries, and backtest results.
+- **Bot (`main.py`)**: Implements Discord slash commands, an autoscan loop, and trade tracking.
+- **5%ers Risk Model**: Configured for The 5%ers 10K High Stakes account, including specific risk per trade, max daily loss, max total drawdown, and profit targets. Position sizing is dynamically calculated based on account size, risk percentage, stop loss distance, and pip value.
+- **Trade State Tracking (`trade_state.py`)**: Persists trade notifications and entry times to prevent duplicate Discord messages and ensure accurate updates across restarts.
 
-1. **Strategy Engine** (`strategy.py`)
-   - 7-pillar confluence evaluation
-   - Multi-timeframe analysis (M, W, D, H4)
-   - ScanResult dataclass with setup info
+### UI/UX Decisions
+- **Discord Integration**: Trade signals, updates, and backtest results are delivered through formatted Discord embeds.
+- **Clean Output**: Autoscan output is streamlined, and detailed single asset scans provide specific setup information.
+- **Emoji Usage**: Emojis are used for directional cues (🟢/🔴) to enhance readability.
 
-2. **Backtest Engine** (`backtest.py`)
-   - Walk-forward simulation
-   - No look-ahead bias
-   - Conservative exit logic
+### Technical Implementations
+- **Confluence Strategy**: Based on 7 pillars: HTF Bias, Location, Fibonacci, Liquidity, Structure, Confirmation, and R:R.
+- **Trade Status Levels**: Signals are categorized as `ACTIVE`, `WATCHING`, or `SCAN`.
+- **Live Price Integration**: Trade entries and TP/SL monitoring use live OANDA prices, preventing reliance on stale data.
+- **Strategy Optimization Framework**: Includes modules for CSV data loading (`data_loader.py`), a parameterized strategy engine (`strategy_core.py`), an enhanced backtest engine (`backtest_engine.py`), an optimizer (`optimizer.py`) for parameter tuning, and reporting (`report.py`).
+- **Dependency Management**: Uses `pyproject.toml` and `uv.lock` for consistent dependency versions.
 
-3. **Data Layer** (`data.py`)
-   - OANDA v20 API integration
-   - Intelligent caching
-
-4. **Cache System** (`cache.py`)
-   - TTL-based in-memory cache
-   - Thread-safe operations
-   - Statistics tracking
-
-5. **Formatting** (`formatting.py`)
-   - Discord message formatting
-   - Scan summaries and details
-   - Backtest result formatting
-
-6. **Bot** (`main.py`)
-   - Discord slash commands
-   - Autoscan loop (4-hour interval)
-   - Trade tracking
-
-### The 7 Pillars of Confluence
-
-1. **HTF Bias** - Monthly, Weekly, Daily trend alignment
-2. **Location** - Price near key S/R levels or supply/demand zones
-3. **Fibonacci** - Price in 50%-79.6% retracement zone
-4. **Liquidity** - Near equal highs/lows or recent sweeps
-5. **Structure** - Market structure supports direction
-6. **Confirmation** - 4H BOS, momentum candles, or engulfing patterns
-7. **R:R** - Minimum 1.5R to first target
-
-### Trade Status Levels
-
-- **ACTIVE** - Full confirmation, trade entry triggered
-- **WATCHING** - Good setup, waiting for confirmation
-- **SCAN** - Low confluence, no actionable setup
-
-## Discord Commands
-
-**Scanning:**
-- `/scan [asset]` - Detailed analysis of a single asset
-- `/forex` - Scan all forex pairs
-- `/crypto` - Scan crypto assets
-- `/com` - Scan commodities (metals + energies)
-- `/indices` - Scan stock indices
-- `/market` - Full market scan
-
-**Trading:**
-- `/trade` - Show active trades with status
-- `/live` - Latest prices for all assets
-
-**Analysis:**
-- `/backtest [asset] [period]` - Test strategy performance
-
-**System:**
-- `/cache` - View cache statistics
-- `/clearcache` - Clear data cache
-- `/help` - Show all commands
+### Feature Specifications
+- **Automated Scanning**: Scans multiple markets at configurable intervals.
+- **Signal Generation**: Identifies high-probability trading setups.
+- **Risk Management**: Implements 5%ers challenge-specific risk rules and dynamic position sizing.
+- **Backtesting**: Comprehensive backtesting with multi-step challenge simulation, daily PnL tracking, and rule breach detection.
+- **Discord Commands**: Provides various commands for scanning, trading analysis, and system management.
+- **Anti-Spam Measures**: Delayed first autoscan and improved channel routing to minimize Discord message spam.
 
 ## External Dependencies
 
 ### Services
-- **Discord API** - Bot communication (discord.py library)
-- **OANDA v20 API** - Market data (practice endpoint)
+- **Discord API**: For bot communication and message delivery.
+- **OANDA v20 API**: For real-time and historical market data (practice endpoint).
 
 ### Environment Variables
-- `DISCORD_BOT_TOKEN` - Discord bot token
-- `OANDA_API_KEY` - OANDA API key (optional - enables autoscan)
-- `OANDA_ACCOUNT_ID` - OANDA account ID
+- `DISCORD_BOT_TOKEN`: Discord bot authentication token.
+- `OANDA_API_KEY`: OANDA API key.
+- `OANDA_ACCOUNT_ID`: OANDA account identifier.
+- `USE_OPTIMIZED_STRATEGY`: Toggle for optimized strategy parameters.
+- `DISCORD_SCAN_CHANNEL_ID`, `DISCORD_TRADES_CHANNEL_ID`, `DISCORD_TRADE_UPDATES_CHANNEL_ID`: Discord channel IDs for routing specific messages.
 
 ### Python Dependencies
-- `discord-py>=2.6.4` - Discord bot framework (async)
-- `pandas>=2.3.3` - Data processing
-- `requests>=2.32.5` - HTTP client for OANDA API
-
-### Dependency Management
-- **Managed via**: `pyproject.toml` + `uv.lock`
-- **Important**: `uv.lock` is committed to Git - it ensures consistent dependency versions across all clones
-- When you clone from GitHub, run `uv sync` to install exact locked versions
-- Do NOT ignore `uv.lock` - it prevents package version mismatches
-
-## Configuration
-
-Key settings in `config.py`:
-- `SIGNAL_MODE` - "standard" (stricter) or "aggressive" (more signals)
-- `SCAN_INTERVAL_HOURS` - Autoscan frequency (default: 4)
-- Discord channel IDs for scan, trades, and updates
-- Instrument lists for each market type
-
-## Optimization System
-
-The bot includes a comprehensive strategy optimization framework for backtesting and tuning.
-
-### New Modules
-
-1. **data_loader.py** - CSV data loading for historical backtesting
-   - Load OHLCV data from CSV files
-   - Year-by-year filtering
-   - Timeframe conversion utilities
-
-2. **strategy_core.py** - Parameterized strategy engine
-   - `StrategyParams` dataclass for all tunable parameters
-   - `generate_signals()` - Generate signals from historical data
-   - `simulate_trades()` - Walk-forward trade simulation
-   - Same logic used by both backtests and live scanning
-
-3. **backtest_engine.py** - Enhanced backtest framework
-   - Comprehensive performance metrics
-   - No look-ahead bias (walk-forward)
-   - Year-by-year analysis
-   - Results export to CSV
-
-4. **optimizer.py** - Strategy parameter optimization
-   - Grid/random search over parameter space
-   - Multi-objective scoring
-   - Configuration saving/loading
-
-5. **report.py** - Performance reporting
-   - Asset-by-asset analysis
-   - Baseline vs optimized comparison
-   - Target achievement tracking
-
-6. **settings.py** - Configuration management
-   - Toggle between baseline and optimized modes
-   - Per-asset parameter overrides
-
-### Optimization Targets
-
-Historical optimization aims for:
-- >= 50 trades per year
-- 70-100% win rate
-- >= 50% yearly return
-
-### CLI Commands
-
-```bash
-# Run baseline backtests
-python backtest_engine.py --mode baseline
-
-# Run optimization
-python optimizer.py --max-configs 50
-
-# Generate performance report
-python report.py
-
-# Compare baseline vs optimized
-python report.py --compare
-
-# Quick single-asset backtest
-python backtest_engine.py --asset XAU_USD --year 2024
-```
-
-### Data Setup
-
-Place CSV files in the `/data` folder:
-- Naming: `EURUSD.csv`, `XAUUSD.csv`, etc.
-- Required columns: timestamp, open, high, low, close, volume
-- Timestamp format: ISO 8601 (e.g., 2024-01-15)
-
-### Strategy Toggle
-
-Set environment variable to switch modes:
-- `USE_OPTIMIZED_STRATEGY=true` - Use optimized parameters (default)
-- `USE_OPTIMIZED_STRATEGY=false` - Use baseline parameters
-
-Optimized configuration is stored in `best_strategy_config.json`.
-
-## 24/7 Hosting Options
-
-### Option 1: Replit Deployments (Recommended)
-
-The simplest way to keep Blueprint Trader AI running 24/7:
-
-1. **Autoscale Deployment** - Click "Deploy" button in Replit
-   - Select "Autoscale" deployment type
-   - Set run command: `python main.py`
-   - Deploy to production
-   - Bot runs continuously with automatic restarts
-   - Cost: Based on compute usage (~$5-20/month)
-
-2. **Reserved VM Deployment** - For guaranteed uptime
-   - Select "Reserved VM" deployment
-   - Bot has dedicated resources
-   - Best for consistent trading hours
-   - Cost: Starting at $7/month
-
-**Important:** Your secrets (DISCORD_BOT_TOKEN, OANDA_API_KEY, OANDA_ACCOUNT_ID) are automatically available in production deployments.
-
-### Option 2: VPS Server (DigitalOcean, Vultr, etc.)
-
-For more control:
-
-1. Create a $5/month droplet (Ubuntu)
-2. Clone the repo: `git clone https://github.com/TheTradrBot/Blueprint-Tradr-AI-Bot`
-3. Install Python 3.11+ and uv
-4. Create `.env` file with your secrets
-5. Run with systemd or PM2 for auto-restart
-
-```bash
-# Install
-curl -LsSf https://astral.sh/uv/install.sh | sh
-cd Blueprint-Tradr-AI-Bot
-uv sync
-
-# Create systemd service
-sudo nano /etc/systemd/system/blueprint-bot.service
-```
-
-Service file:
-```ini
-[Unit]
-Description=Blueprint Trader AI Bot
-After=network.target
-
-[Service]
-Type=simple
-User=your-user
-WorkingDirectory=/path/to/Blueprint-Tradr-AI-Bot
-ExecStart=/path/to/.venv/bin/python main.py
-Restart=always
-EnvironmentFile=/path/to/.env
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl enable blueprint-bot
-sudo systemctl start blueprint-bot
-```
-
-### Option 3: Railway.app
-
-Alternative cloud hosting:
-
-1. Connect GitHub repo
-2. Add environment variables in Railway dashboard
-3. Deploy - runs automatically
-4. Cost: ~$5/month for always-on bots
-
-### Keeping Secrets Safe
-
-- **Never commit secrets to Git**
-- Use environment variables or secrets managers
-- On Replit: Use the Secrets tab
-- On VPS: Use `.env` files (add to .gitignore)
-- Rotate API keys periodically
-- Use OANDA practice API for testing
+- `discord-py`: Discord bot framework.
+- `pandas`: Data processing and analysis.
+- `requests`: HTTP client for API interactions.
+- `uv`: Package installer and resolver.
