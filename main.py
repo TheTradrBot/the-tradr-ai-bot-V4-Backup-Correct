@@ -305,14 +305,40 @@ bot = BlueprintTraderBot()
 
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
-    print("Blueprint Trader AI is online.")
-    if os.getenv("OANDA_API_KEY"):
+    print("=" * 60)
+    print(f"✓ Logged in as {bot.user} (ID: {bot.user.id})")
+    print(f"✓ Connected to {len(bot.guilds)} server(s)")
+    print("=" * 60)
+    
+    # Check Discord channels
+    scan_ch = bot.get_channel(SCAN_CHANNEL_ID)
+    trades_ch = bot.get_channel(TRADES_CHANNEL_ID)
+    updates_ch = bot.get_channel(TRADE_UPDATES_CHANNEL_ID)
+    
+    print("\n📡 Channel Status:")
+    print(f"  Scan Channel ({SCAN_CHANNEL_ID}): {'✓ Found' if scan_ch else '✗ NOT FOUND'}")
+    print(f"  Trades Channel ({TRADES_CHANNEL_ID}): {'✓ Found' if trades_ch else '✗ NOT FOUND'}")
+    print(f"  Updates Channel ({TRADE_UPDATES_CHANNEL_ID}): {'✓ Found' if updates_ch else '✗ NOT FOUND'}")
+    
+    # Check OANDA
+    print("\n🔑 API Status:")
+    if os.getenv("OANDA_API_KEY") and os.getenv("OANDA_ACCOUNT_ID"):
+        print("  OANDA API: ✓ Configured")
         if not autoscan_loop.is_running():
             autoscan_loop.start()
-            print("Autoscan loop started.")
+            print(f"  Autoscan: ✓ Started (every {SCAN_INTERVAL_HOURS}H)")
+        else:
+            print("  Autoscan: ✓ Already running")
     else:
-        print("OANDA_API_KEY not configured. Autoscan disabled. Set it in Replit Secrets to enable market scanning.")
+        print("  OANDA API: ✗ Not configured")
+        print("  Autoscan: ✗ Disabled")
+        print("\n  To enable autoscan, add these to Replit Secrets:")
+        print("    - OANDA_API_KEY")
+        print("    - OANDA_ACCOUNT_ID")
+    
+    print("\n" + "=" * 60)
+    print("🚀 Blueprint Trader AI is online and ready!")
+    print("=" * 60 + "\n")
 
 
 @bot.tree.command(name="help", description="Show all available commands.")
@@ -1124,6 +1150,34 @@ async def autoscan_loop():
 
 
 if not DISCORD_TOKEN:
+    print("\n" + "=" * 60)
+    print("❌ ERROR: DISCORD_BOT_TOKEN not found!")
+    print("=" * 60)
+    print("\nTo fix this:")
+    print("1. Click the 'Secrets' tool (🔒) in the left sidebar")
+    print("2. Add a new secret:")
+    print("   Key: DISCORD_BOT_TOKEN")
+    print("   Value: Your Discord bot token")
+    print("\nGet your token from: https://discord.com/developers/applications")
+    print("=" * 60 + "\n")
     raise ValueError("DISCORD_BOT_TOKEN not found. Set it in Replit Secrets.")
 
-bot.run(DISCORD_TOKEN)
+print("Starting Blueprint Trader AI Bot...")
+print("Connecting to Discord...\n")
+
+try:
+    bot.run(DISCORD_TOKEN)
+except discord.LoginFailure:
+    print("\n" + "=" * 60)
+    print("❌ ERROR: Invalid Discord Token!")
+    print("=" * 60)
+    print("\nYour DISCORD_BOT_TOKEN in Secrets is invalid.")
+    print("Please verify the token at: https://discord.com/developers/applications")
+    print("=" * 60 + "\n")
+except Exception as e:
+    print("\n" + "=" * 60)
+    print(f"❌ ERROR: {type(e).__name__}")
+    print("=" * 60)
+    print(f"\n{str(e)}\n")
+    print("=" * 60 + "\n")
+    raise
