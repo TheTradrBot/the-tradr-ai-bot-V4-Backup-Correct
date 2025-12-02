@@ -587,7 +587,7 @@ async def live(interaction: discord.Interaction):
         await interaction.followup.send(f"Error fetching live prices: {str(e)}")
 
 
-@bot.tree.command(name="backtest", description='Backtest strategy. Example: /backtest EUR_USD "Jan 2024 - Dec 2024" or /backtest "Jan 2024 - Dec 2024"')
+@bot.tree.command(name="backtest", description="Backtest strategy for asset(s) over a period")
 @app_commands.describe(
     asset="Optional: Specific asset to backtest (e.g., EUR_USD). Leave empty for all assets.",
     period="The time period (e.g., 'Jan 2024 - Dec 2024')"
@@ -738,7 +738,7 @@ async def backtest_cmd(interaction: discord.Interaction, period: str, asset: str
         await interaction.followup.send(f"Error running backtest: {str(e)}")
 
 
-@bot.tree.command(name="output", description='Export backtest to CSV. Example: /output EUR_USD "Jan 2024 - Dec 2024"')
+@bot.tree.command(name="output", description="Export backtest results to CSV file")
 @app_commands.describe(
     asset="The asset to backtest (e.g., EUR_USD)",
     period="The time period (e.g., 'Jan 2024 - Dec 2024')"
@@ -860,7 +860,7 @@ async def cleartrades(interaction: discord.Interaction):
     await interaction.response.send_message(f"Cleared {count} active trades.", ephemeral=True)
 
 
-@bot.tree.command(name="challenge", description="Simulate 5ers 2-step challenge. Example: /challenge Jan 2024 Jul 2024")
+@bot.tree.command(name="challenge", description="Simulate 5ers 2-step challenge over a date range")
 @app_commands.describe(
     start_month="Start month (e.g., 'Jan')",
     start_year="Start year (e.g., '2024' or '24')",
