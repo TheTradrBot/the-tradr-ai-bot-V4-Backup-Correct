@@ -20,8 +20,19 @@ from strategy_core import (
 )
 from position_sizing import calculate_position_size_5ers
 import os
+from pathlib import Path
 
-# MT5 Bridge Configuration - Read from Replit Secrets
+# Load environment variables from .env file if it exists (for Windows VM)
+try:
+    from dotenv import load_dotenv
+    env_file = Path(__file__).parent / ".env"
+    if env_file.exists():
+        load_dotenv(env_file)
+        print("[config] Loaded environment from .env file")
+except ImportError:
+    pass  # dotenv not installed, will use system env vars
+
+# MT5 Bridge Configuration - Read from environment
 MT5_BRIDGE_URL = os.getenv("MT5_BRIDGE_URL", "http://localhost:5555")
 MT5_SERVER = os.getenv("MT5_SERVER", "FTMO-Demo")
 MT5_LOGIN = int(os.getenv("MT5_LOGIN", "0"))
